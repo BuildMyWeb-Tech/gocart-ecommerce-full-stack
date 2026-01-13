@@ -4,12 +4,14 @@ import Hero from "@/components/Hero";
 import Newsletter from "@/components/Newsletter";
 import OurSpecs from "@/components/OurSpec";
 import LatestProducts from "@/components/LatestProducts";
+import About from "@/components/About";
 
 export default function Home() {
     return (
         <div>
             <Hero />
             <LatestProducts />
+            <About/>
             <BestSelling />
             <OurSpecs />
             <Newsletter />
