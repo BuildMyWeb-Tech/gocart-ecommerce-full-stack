@@ -133,13 +133,7 @@ export default function Dashboard() {
                                 <h3 className="text-slate-800 text-2xl font-bold mt-1">{card.value}</h3>
                             </div>
                         </div>
-                        <div className="flex items-center justify-between px-5 py-3 bg-white border-t border-slate-100">
-                            <div className="flex items-center gap-1 text-green-600 text-xs font-medium">
-                                <ArrowUpIcon size={14} />
-                                {card.growth}% growth
-                            </div>
-                            <p className="text-slate-500 text-xs">vs. last month</p>
-                        </div>
+                        
                     </div>
                 ))}
             </div>

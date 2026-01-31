@@ -1,22 +1,29 @@
 'use client'
-import { PackageIcon, Search, ShoppingCart, HomeIcon, MenuIcon, XIcon, UserIcon, LayoutGridIcon, ShoppingBagIcon } from "lucide-react";
+import { PackageIcon, Search, ShoppingCart, HomeIcon, MenuIcon, XIcon, UserIcon, LayoutGridIcon, ShoppingBagIcon, Heart, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { useUser, useClerk, UserButton, Protect } from "@clerk/nextjs";
 import Image from "next/image";
+import toast from "react-hot-toast";
 
 const Navbar = () => {
     const { user } = useUser();
     const { openSignIn } = useClerk();
     const router = useRouter();
     const pathname = usePathname();
+    const dispatch = useDispatch();
 
     const [search, setSearch] = useState('');
     const [showSearch, setShowSearch] = useState(false);
     const [showMobileMenu, setShowMobileMenu] = useState(false);
-    const cartCount = useSelector(state => state.cart.total);
+    
+    // Get cart and wishlist counts from redux
+    const cartItems = useSelector(state => state.cart.items || []);
+    const wishlistItems = useSelector(state => state.wishlist.items || []);
+    const cartCount = cartItems.length;
+    const wishlistCount = wishlistItems.length;
 
     // Handle scroll behavior for navbar
     const [isScrolled, setIsScrolled] = useState(false);
@@ -35,6 +42,10 @@ const Navbar = () => {
         router.push(`/shop?search=${search}`);
         setShowSearch(false);
     };
+
+    // Rest of your component remains the same
+    // ...
+
 
     return (
         <>
@@ -97,6 +108,22 @@ const Navbar = () => {
                                 />
                             </form>
 
+                            {/* Desktop Wishlist */}
+                            <Link 
+                                href="/wishlist" 
+                                className="relative flex items-center gap-2 text-slate-600 hover:text-green-600 transition-colors font-medium group"
+                            >
+                                <div className="relative">
+                                    <Heart size={20} />
+                                    {wishlistCount > 0 && (
+                                        <div className="absolute -top-2 -right-2 text-[10px] font-bold text-white bg-red-500 group-hover:bg-red-600 transition-colors min-w-5 h-5 rounded-full flex items-center justify-center">
+                                            {wishlistCount}
+                                        </div>
+                                    )}
+                                </div>
+                                Wishlist
+                            </Link>
+
                             {/* Desktop Cart */}
                             <Link 
                                 href="/cart" 
@@ -138,6 +165,19 @@ const Navbar = () => {
 
                         {/* Mobile Top Right Controls */}
                         <div className="flex sm:hidden items-center gap-3">
+                            {/* Mobile Wishlist */}
+                            <Link 
+                                href="/wishlist" 
+                                className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors relative"
+                            >
+                                <Heart size={20} />
+                                {wishlistCount > 0 && (
+                                    <div className="absolute -top-0.5 -right-0.5 text-[10px] font-bold text-white bg-red-500 min-w-4 h-4 rounded-full flex items-center justify-center">
+                                        {wishlistCount}
+                                    </div>
+                                )}
+                            </Link>
+                        
                             <button 
                                 onClick={() => setShowSearch(!showSearch)} 
                                 className="p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
@@ -157,6 +197,11 @@ const Navbar = () => {
                                             labelIcon={<ShoppingBagIcon size={16}/>} 
                                             label="Shop" 
                                             onClick={()=> router.push('/shop')}
+                                        />
+                                        <UserButton.Action 
+                                            labelIcon={<Heart size={16}/>} 
+                                            label="Wishlist" 
+                                            onClick={()=> router.push('/wishlist')}
                                         />
                                         <UserButton.Action 
                                             labelIcon={<PackageIcon size={16}/>} 
@@ -215,7 +260,7 @@ const Navbar = () => {
 
             {/* Mobile Bottom Navigation */}
             <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 sm:hidden shadow-lg">
-                <div className="grid grid-cols-4 py-1">
+                <div className="grid grid-cols-5 py-1">
                     <Link href="/" className={`flex flex-col items-center justify-center py-2 text-xs ${pathname === '/' ? 'text-green-600' : 'text-slate-600'}`}>
                         <HomeIcon size={20} className={`mb-1 ${pathname === '/' ? 'text-green-600' : 'text-slate-500'}`} />
                         <span className="font-medium">Home</span>
@@ -224,6 +269,18 @@ const Navbar = () => {
                     <Link href="/shop" className={`flex flex-col items-center justify-center py-2 text-xs ${pathname.includes('/shop') ? 'text-green-600' : 'text-slate-600'}`}>
                         <LayoutGridIcon size={20} className={`mb-1 ${pathname.includes('/shop') ? 'text-green-600' : 'text-slate-500'}`} />
                         <span className="font-medium">Shop</span>
+                    </Link>
+                    
+                    <Link href="/wishlist" className={`flex flex-col items-center justify-center py-2 text-xs ${pathname.includes('/wishlist') ? 'text-red-500' : 'text-slate-600'} relative`}>
+                        <div className="relative">
+                            <Heart size={20} className={`mb-1 ${pathname.includes('/wishlist') ? 'text-red-500 fill-red-500' : 'text-slate-500'}`} />
+                            {wishlistCount > 0 && (
+                                <div className="absolute -top-2 -right-2 text-[10px] font-bold text-white bg-red-500 min-w-4 h-4 rounded-full flex items-center justify-center">
+                                    {wishlistCount}
+                                </div>
+                            )}
+                        </div>
+                        <span className="font-medium">Wishlist</span>
                     </Link>
                     
                     <Link href="/orders" className={`flex flex-col items-center justify-center py-2 text-xs ${pathname.includes('/orders') ? 'text-green-600' : 'text-slate-600'}`}>

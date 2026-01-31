@@ -5,7 +5,7 @@ import axios from "axios"
 import Image from "next/image"
 import { useState } from "react"
 import { toast } from "react-hot-toast"
-import { PlusCircle, Camera, ImagePlus, Tag, DollarSign, Package, Sparkles, RotateCcw, Cpu, ShoppingBag, Save, UploadCloud, ArrowRight } from "lucide-react"
+import { PlusCircle, Camera, ImagePlus, Tag, IndianRupee  ,  Package, Sparkles, RotateCcw, Cpu, ShoppingBag, Save, UploadCloud, ArrowRight } from "lucide-react"
 
 export default function StoreAddProduct() {
 
@@ -15,8 +15,8 @@ export default function StoreAddProduct() {
     const [productInfo, setProductInfo] = useState({
         name: "",
         description: "",
-        mrp: 0,
-        price: 0,
+        mrp: "",
+        price: "",
         category: "",
     })
     const [loading, setLoading] = useState(false)
@@ -97,7 +97,7 @@ export default function StoreAddProduct() {
             const { data } = await axios.post('/api/store/product', formData, { headers: { Authorization: `Bearer ${token}` } })
             toast.success(data.message)
 
-            setProductInfo({ name: "", description: "", mrp: 0, price: 0, category: "" })
+            setProductInfo({ name: "", description: "", mrp: "", price: "", category: "" })
             setImages({ 1: null, 2: null, 3: null, 4: null })
             setAiUsed(false)
         } catch (error) {
@@ -205,17 +205,17 @@ export default function StoreAddProduct() {
                     <div className="flex flex-col sm:flex-row gap-5">
                         <label className="flex flex-col gap-2 flex-1">
                             <span className="font-medium text-slate-700 flex items-center gap-2">
-                                <DollarSign size={16} className="text-red-500" />
+                                <IndianRupee  size={16} className="text-red-500" />
                                 Actual Price
                             </span>
                             <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
                                 <input 
                                     type="number" 
                                     name="mrp" 
                                     onChange={onChangeHandler} 
                                     value={productInfo.mrp} 
-                                    placeholder="0" 
+                                    placeholder="" 
                                     className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-200 transition-all bg-slate-50" 
                                     required 
                                 />
@@ -224,17 +224,17 @@ export default function StoreAddProduct() {
                         
                         <label className="flex flex-col gap-2 flex-1">
                             <span className="font-medium text-slate-700 flex items-center gap-2">
-                                <DollarSign size={16} className="text-green-500" />
+                                <IndianRupee  size={16} className="text-green-500" />
                                 Offer Price
                             </span>
                             <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">₹</span>
                                 <input 
                                     type="number" 
                                     name="price" 
                                     onChange={onChangeHandler} 
                                     value={productInfo.price} 
-                                    placeholder="0" 
+                                    placeholder="" 
                                     className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-slate-200 transition-all bg-slate-50" 
                                     required 
                                 />
@@ -271,7 +271,7 @@ export default function StoreAddProduct() {
                 <button 
                     type="button" 
                     onClick={() => {
-                        setProductInfo({ name: "", description: "", mrp: 0, price: 0, category: "" })
+                        setProductInfo({ name: "", description: "", mrp: "", price: "", category: "" })
                         setImages({ 1: null, 2: null, 3: null, 4: null })
                         setAiUsed(false)
                     }}

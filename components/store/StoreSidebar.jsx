@@ -3,7 +3,7 @@ import { usePathname } from "next/navigation"
 import { 
     HomeIcon, LayoutListIcon, SquarePenIcon, SquarePlusIcon, 
     BarChart2, ShoppingBag, Settings, Users, HelpCircle, DollarSign,
-    LogOut, Store, Gift, ChevronDown, ChevronRight, ExternalLink, X
+    LogOut, Store, Gift, ChevronDown, ChevronRight,ChevronLeft , ExternalLink, X, Layers, FolderPlus
 } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
@@ -17,40 +17,19 @@ const StoreSidebar = ({storeInfo, closeMobileMenu}) => {
     // Enhanced sidebar links with sections and nested items
     const sidebarSections = [
         { 
-            name: 'Main',
+            
             items: [
-                { name: 'Dashboard', href: '/store', icon: HomeIcon }
-            ]
-        },
-        { 
-            name: 'Products',
-            items: [
+                { name: 'Dashboard', href: '/store', icon: HomeIcon },
+                { name: 'Product Categories', href: '/store/categories', icon: LayoutListIcon },                
                 { name: 'Add Product', href: '/store/add-product', icon: SquarePlusIcon },
-                { name: 'Manage Products', href: '/store/manage-product', icon: SquarePenIcon },
-            ]
-        },
-        { 
-            name: 'Orders',
-            items: [
-                { name: 'All Orders', href: '/store/orders', icon: LayoutListIcon },
+                { name: 'Manage Products', href: '/store/manage-product', icon: SquarePenIcon },                
                 { name: 'Pending', href: '/store/orders/pending', icon: ShoppingBag, badge: "3" },
                 { name: 'Completed', href: '/store/orders/completed', icon: Gift },
-            ]
-        },
-        { 
-            name: 'Analytics',
-            items: [
                 { name: 'Sales Report', href: '/store/analytics', icon: BarChart2 },
-                { name: 'Customer Insights', href: '/store/customers', icon: Users },
-            ]
-        },
-        { 
-            name: 'Account',
-            items: [
                 { name: 'Store Settings', href: '/store/settings', icon: Settings },
                 { name: 'Help & Support', href: '/store/help', icon: HelpCircle },
             ]
-        },
+        }
     ]
 
     // Function to toggle section expansion
@@ -109,7 +88,7 @@ const StoreSidebar = ({storeInfo, closeMobileMenu}) => {
                     onClick={() => setCollapsed(!collapsed)} 
                     className="text-slate-400 hover:text-slate-600 p-1 rounded-md hover:bg-slate-100 transition-colors hidden md:block"
                 >
-                    {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                    {collapsed ? <ChevronRight size={16} /> : <ChevronLeft  size={16} />}
                 </button>
             </div>
 
@@ -120,14 +99,14 @@ const StoreSidebar = ({storeInfo, closeMobileMenu}) => {
                         {/* Section heading - only show on expanded view */}
                         {(!collapsed || window.innerWidth < 768) && (
                             <div 
-                                className="flex items-center justify-between px-6 py-2 text-xs font-medium text-slate-400 uppercase tracking-wider cursor-pointer"
+                                className="flex items-center justify-between px-6 py-2 text-xs font-medium  uppercase tracking-wider cursor-pointer"
                                 onClick={() => toggleSection(section.name)}
                             >
                                 <span>{section.name}</span>
-                                <ChevronDown 
+                                {/* <ChevronRight 
                                     size={14} 
                                     className={`transition-transform ${expandedSection === section.name ? 'transform rotate-180' : ''}`} 
-                                />
+                                /> */}
                             </div>
                         )}
                         

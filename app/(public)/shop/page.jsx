@@ -1,7 +1,24 @@
 'use client'
 import { Suspense, useState, useEffect } from "react"
 import ProductCard from "@/components/ProductCard"
-import { MoveLeftIcon, FilterIcon, SlidersHorizontalIcon, Search, ShoppingBagIcon, SortAscIcon, CheckCircle2, X, RefreshCw, Zap } from "lucide-react"
+import { 
+    MoveLeftIcon, 
+    FilterIcon, 
+    SlidersHorizontalIcon, 
+    Search, 
+    ShoppingBagIcon, 
+    SortAscIcon, 
+    CheckCircle2, 
+    X, 
+    RefreshCw, 
+    Zap, 
+    ChevronRight,
+    AlertCircle,
+    ArrowUpDown,
+    LayoutGrid,
+    PanelLeft,
+    PanelLeftClose
+} from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useSelector } from "react-redux"
 
@@ -60,10 +77,20 @@ function ShopContent() {
                 return 0 // keep original order
         }
     })
+    
+    // Reset all filters function
+    const resetFilters = () => {
+        setSelectedCategory('All')
+        setPriceRange([minPrice, maxPrice])
+        setSortBy('featured')
+        if (search) {
+            router.push('/shop')
+        }
+    }
 
     return (
-        <div className="min-h-[70vh] mx-6">
-            <div className="max-w-7xl mx-auto">
+        <div className="min-h-[70vh] mx-auto px-4 sm:px-6 max-w-7xl">
+            <div className="w-full">
                 {/* Header with search results or back button */}
                 <div className="flex justify-between items-center my-6">
                     <h1 
@@ -76,7 +103,7 @@ function ShopContent() {
                                 Search: "<span className="font-medium text-slate-800">{search}</span>"
                             </span>
                         ) : (
-                            <span>All <span className="text-slate-700 font-medium bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">Products</span></span>
+                            <span>All <span className="text-slate-700 font-medium bg-gradient-to-r from-emerald-600 to-green-600 bg-clip-text text-transparent">Products</span></span>
                         )}
                     </h1>
                     
@@ -95,7 +122,7 @@ function ShopContent() {
                                 <option value="rating">Highest Rated</option>
                             </select>
                             <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-600">
-                                <SortAscIcon size={16} />
+                                <ArrowUpDown size={16} />
                             </div>
                         </div>
                         
@@ -103,12 +130,21 @@ function ShopContent() {
                             onClick={() => setShowFilters(!showFilters)}
                             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm rounded-lg transition-all duration-300 ${
                                 showFilters 
-                                    ? 'bg-gradient-to-r from-slate-700 to-slate-800 text-white shadow-md' 
+                                    ? 'bg-gradient-to-r from-emerald-600 to-green-700 text-white shadow-md' 
                                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200 shadow-sm hover:shadow'
                             }`}
                         >
-                            <FilterIcon size={16} />
-                            Filters {showFilters ? '(Active)' : ''}
+                            {showFilters ? (
+                                <>
+                                    <PanelLeftClose size={16} />
+                                    Hide Filters
+                                </>
+                            ) : (
+                                <>
+                                    <PanelLeft size={16} />
+                                    Show Filters
+                                </>
+                            )}
                         </button>
                     </div>
                     
@@ -138,7 +174,7 @@ function ShopContent() {
                             name="search"
                             defaultValue={search}
                             placeholder="Search products..." 
-                            className="w-full bg-slate-100 border border-slate-200 py-2.5 pl-10 pr-4 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 shadow-inner transition-all"
+                            className="w-full bg-slate-100 border border-slate-200 py-2.5 pl-10 pr-4 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-300 shadow-inner transition-all"
                         />
                         <div className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500">
                             <Search size={16} />
@@ -149,15 +185,14 @@ function ShopContent() {
                 <div className="flex flex-col md:flex-row gap-6">
                     {/* Filters sidebar */}
                     {showFilters && (
-                        <div className="w-full md:w-64 bg-white p-5 rounded-xl shadow-md border border-slate-100 animate-in fade-in duration-300">
+                        <div className="w-full md:w-64 bg-white p-5 rounded-xl shadow-md border border-slate-200 h-max animate-in slide-in-from-left-10 duration-300">
                             <div className="flex items-center justify-between mb-4">
-                                <h2 className="font-semibold text-slate-800">Filters</h2>
+                                <h2 className="font-semibold text-slate-800 flex items-center gap-2">
+                                    <FilterIcon size={16} className="text-emerald-600" />
+                                    Filters
+                                </h2>
                                 <button 
-                                    onClick={() => {
-                                        setSelectedCategory('All')
-                                        setPriceRange([minPrice, maxPrice])
-                                        setSortBy('featured')
-                                    }}
+                                    onClick={resetFilters}
                                     className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
                                 >
                                     <RefreshCw size={12} />
@@ -167,7 +202,7 @@ function ShopContent() {
                             
                             <div className="mb-6">
                                 <h3 className="font-medium text-slate-800 mb-3 flex items-center gap-2">
-                                    <span className="w-1.5 h-6 bg-gradient-to-b from-green-400 to-green-600 rounded-full inline-block"></span>
+                                    <span className="w-1.5 h-6 bg-gradient-to-b from-emerald-400 to-green-600 rounded-full inline-block"></span>
                                     Categories
                                 </h3>
                                 <div className="space-y-2.5 max-h-56 overflow-y-auto custom-scrollbar pl-2">
@@ -179,15 +214,15 @@ function ShopContent() {
                                                 name="category"
                                                 checked={selectedCategory === category}
                                                 onChange={() => setSelectedCategory(category)}
-                                                className="mr-2 accent-slate-700 w-4 h-4"
+                                                className="mr-2 accent-emerald-600 w-4 h-4"
                                             />
                                             <label 
                                                 htmlFor={category} 
-                                                className={`text-sm cursor-pointer transition-colors ${selectedCategory === category ? 'text-slate-800 font-medium' : 'text-slate-600'}`}
+                                                className={`text-sm cursor-pointer transition-colors ${selectedCategory === category ? 'text-emerald-700 font-medium' : 'text-slate-600'}`}
                                             >
                                                 {category}
                                             </label>
-                                            {selectedCategory === category && <CheckCircle2 size={14} className="ml-1 text-green-500" />}
+                                            {selectedCategory === category && <CheckCircle2 size={14} className="ml-1 text-emerald-500" />}
                                         </div>
                                     ))}
                                 </div>
@@ -208,7 +243,7 @@ function ShopContent() {
                                             min={minPrice}
                                             max={priceRange[1]}
                                         />
-                                        <span className="absolute left-2.5 top-2.5 text-xs text-slate-500">$</span>
+                                        <span className="absolute left-2.5 top-2.5 text-xs text-slate-500"></span>
                                     </div>
                                     <span className="text-slate-500">to</span>
                                     <div className="relative flex-1">
@@ -220,7 +255,7 @@ function ShopContent() {
                                             min={priceRange[0]}
                                             max={maxPrice}
                                         />
-                                        <span className="absolute left-2.5 top-2.5 text-xs text-slate-500">$</span>
+                                        <span className="absolute left-2.5 top-2.5 text-xs text-slate-500"></span>
                                     </div>
                                 </div>
                                 <div className="px-1">
@@ -230,11 +265,11 @@ function ShopContent() {
                                         max={maxPrice}
                                         value={priceRange[1]}
                                         onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])}
-                                        className="w-full accent-slate-700 h-2 bg-slate-200 rounded-full appearance-none cursor-pointer"
+                                        className="w-full accent-emerald-600 h-2 bg-slate-200 rounded-full appearance-none cursor-pointer"
                                     />
                                     <div className="flex justify-between text-xs text-slate-500 mt-2">
-                                        <span>${minPrice}</span>
-                                        <span>${maxPrice}</span>
+                                        <span>₹{minPrice}</span>
+                                        <span>₹{maxPrice}</span>
                                     </div>
                                 </div>
                             </div>
@@ -266,12 +301,8 @@ function ShopContent() {
                                     Close
                                 </button>
                                 <button 
-                                    onClick={() => {
-                                        setSelectedCategory('All')
-                                        setPriceRange([minPrice, maxPrice])
-                                        setSortBy('featured')
-                                    }}
-                                    className="w-full bg-gradient-to-r from-slate-700 to-slate-800 text-white py-2.5 rounded-lg text-sm shadow hover:shadow-md transition-all hover:from-slate-800 hover:to-slate-900 flex items-center justify-center gap-1.5"
+                                    onClick={resetFilters}
+                                    className="w-full bg-gradient-to-r from-emerald-500 to-green-600 text-white py-2.5 rounded-lg text-sm shadow hover:shadow-md transition-all hover:from-emerald-600 hover:to-green-700 flex items-center justify-center gap-1.5"
                                 >
                                     <RefreshCw size={14} />
                                     Reset
@@ -279,24 +310,27 @@ function ShopContent() {
                             </div>
                             
                             {/* Active filters summary */}
-                            {(selectedCategory !== 'All' || priceRange[0] > minPrice || priceRange[1] < maxPrice) && (
+                            {/* {(selectedCategory !== 'All' || priceRange[0] > minPrice || priceRange[1] < maxPrice) && (
                                 <div className="mt-6 pt-5 border-t border-slate-100">
                                     <h4 className="text-xs font-medium text-slate-500 mb-2">ACTIVE FILTERS:</h4>
                                     <div className="flex flex-wrap gap-2">
                                         {selectedCategory !== 'All' && (
-                                            <div className="bg-slate-100 text-xs text-slate-700 px-2 py-1 rounded-full flex items-center gap-1.5">
+                                            <div className="bg-emerald-50 text-xs text-emerald-700 px-2 py-1 rounded-full flex items-center gap-1.5 border border-emerald-100">
                                                 {selectedCategory}
-                                                <button onClick={() => setSelectedCategory('All')} className="text-slate-500 hover:text-slate-700">
+                                                <button 
+                                                    onClick={() => setSelectedCategory('All')} 
+                                                    className="ml-1 text-emerald-500 hover:text-emerald-700"
+                                                >
                                                     <X size={12} />
                                                 </button>
                                             </div>
                                         )}
                                         {(priceRange[0] > minPrice || priceRange[1] < maxPrice) && (
-                                            <div className="bg-slate-100 text-xs text-slate-700 px-2 py-1 rounded-full flex items-center gap-1.5">
-                                                ${priceRange[0]} - ${priceRange[1]}
+                                            <div className="bg-amber-50 text-xs text-amber-700 px-2 py-1 rounded-full flex items-center gap-1.5 border border-amber-100">
+                                                ₹{priceRange[0]} - ₹{priceRange[1]}
                                                 <button 
                                                     onClick={() => setPriceRange([minPrice, maxPrice])} 
-                                                    className="text-slate-500 hover:text-slate-700"
+                                                    className="ml-1 text-amber-500 hover:text-amber-700"
                                                 >
                                                     <X size={12} />
                                                 </button>
@@ -304,7 +338,7 @@ function ShopContent() {
                                         )}
                                     </div>
                                 </div>
-                            )}
+                            )} */}
                         </div>
                     )}
                     
@@ -312,40 +346,47 @@ function ShopContent() {
                     <div className="flex-1">
                         {sortedProducts.length > 0 ? (
                             <>
-                                <div className="hidden md:flex justify-between mb-4">
-                                    <p className="text-sm text-slate-600 bg-slate-100 px-3 py-1 rounded-full shadow-inner">
-                                        Showing <span className="font-medium text-slate-800">{sortedProducts.length}</span> products
-                                    </p>
-                                    <p className="text-sm text-slate-600">
-                                        {selectedCategory !== 'All' && (
-                                            <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full flex items-center gap-1.5 inline-flex">
-                                                <CheckCircle2 size={14} className="text-green-600" />
-                                                Category: {selectedCategory}
-                                            </span>
-                                        )}
-                                    </p>
+                                <div className="flex justify-between items-center mb-4">
+                                    <div className="flex items-center gap-2">
+                                        {/* <span className="hidden sm:flex items-center gap-1 bg-white border border-slate-200 text-slate-600 text-xs px-3 py-1.5 rounded-full shadow-sm">
+                                            <LayoutGrid size={14} className="text-emerald-600" />
+                                            <span className="hidden sm:inline">View:</span> {showFilters ? '3 columns' : '4 columns'}
+                                        </span> */}
+                                        <span className="bg-white border border-slate-200 text-slate-600 text-xs px-3 py-1.5 rounded-full shadow-sm">
+                                            Showing <span className="font-medium text-emerald-600">{sortedProducts.length}</span> products
+                                        </span>
+                                    </div>
+                                    
+                                    {selectedCategory !== 'All' && (
+                                        <span className="bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs border border-emerald-100">
+                                            <CheckCircle2 size={14} className="text-emerald-600" />
+                                            {selectedCategory}
+                                        </span>
+                                    )}
                                 </div>
                                 
-                                <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 mx-auto mb-32">
-                                    {sortedProducts.map((product) => <ProductCard key={product.id} product={product} />)}
+                                {/* Dynamic grid that changes columns based on filters visibility */}
+                                <div className={`grid ${showFilters 
+                                    ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' 
+                                    : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'
+                                } gap-4 md:gap-6 mx-auto mb-32 animate-in fade-in-50 duration-300`}>
+                                    {sortedProducts.map((product) => (
+                                        <ProductCard key={product.id} product={product} />
+                                    ))}
                                 </div>
                             </>
                         ) : (
                             <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50 rounded-2xl border border-slate-100 shadow-inner">
                                 <div className="bg-white p-6 rounded-full mb-6 shadow-md border border-slate-100">
-                                    <ShoppingBagIcon className="w-10 h-10 text-slate-400" />
+                                    <AlertCircle className="w-10 h-10 text-amber-500" />
                                 </div>
                                 <h3 className="text-xl font-medium text-slate-800 mb-2">No products found</h3>
                                 <p className="text-sm text-slate-500 max-w-md mb-6 leading-relaxed">
                                     We couldn't find any products matching your criteria. Try adjusting your filters or search term.
                                 </p>
                                 <button 
-                                    onClick={() => {
-                                        setSelectedCategory('All')
-                                        setPriceRange([minPrice, maxPrice])
-                                        router.push('/shop')
-                                    }} 
-                                    className="bg-gradient-to-r from-slate-700 to-slate-800 hover:from-slate-800 hover:to-slate-900 text-white px-5 py-3 rounded-lg transition-all text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2 transform hover:-translate-y-0.5"
+                                    onClick={resetFilters}
+                                    className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white px-5 py-3 rounded-lg transition-all text-sm font-medium shadow-md hover:shadow-lg flex items-center gap-2 transform hover:-translate-y-0.5"
                                 >
                                     <RefreshCw size={16} />
                                     Reset Filters
