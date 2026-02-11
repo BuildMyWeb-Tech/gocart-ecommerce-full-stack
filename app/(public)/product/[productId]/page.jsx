@@ -29,7 +29,7 @@ export default function Product() {
 
                 {/* Breadcrums */}
                 <div className="  text-gray-600 text-sm mt-8 mb-5">
-                    Home / Products / {product?.category}
+                    Home / Products / {product?.category } / {product?.name}
                 </div>
 
                 {/* Product Details */}

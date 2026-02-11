@@ -1,14 +1,18 @@
-'use client'
-import { useRef } from 'react'
-import { Provider } from 'react-redux'
-import { makeStore } from '../lib/store'
+// app/StoreProvider.js
+'use client';
+
+import { Provider } from 'react-redux';
+import { PersistGate } from 'redux-persist/integration/react';
+import { store, persistor } from '@/lib/store';
+import { Toaster } from 'react-hot-toast';
 
 export default function StoreProvider({ children }) {
-  const storeRef = useRef(undefined)
-  if (!storeRef.current) {
-    // Create the store instance the first time this renders
-    storeRef.current = makeStore()
-  }
-
-  return <Provider store={storeRef.current}>{children}</Provider>
+    return (
+        <Provider store={store}>
+            <PersistGate loading={null} persistor={persistor}>
+                <Toaster position="top-center" />
+                {children}
+            </PersistGate>
+        </Provider>
+    );
 }

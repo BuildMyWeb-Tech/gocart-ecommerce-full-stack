@@ -20,7 +20,11 @@ import { ClockFadingIcon, HeadsetIcon, SendIcon } from "lucide-react";
 import profile_pic1 from "./profile_pic1.jpg"
 import profile_pic2 from "./profile_pic2.jpg"
 import profile_pic3 from "./profile_pic3.jpg"
-
+import Img1 from "./img_1.jpg"
+import Img2 from "./img_2.jpg"
+import Img3 from "./img_3.jpg"
+import Img4 from "./img_4.jpg"
+import Img5 from "./img_5.jpg"
 export const assets = {
     upload_area,
     hero_model_img,
@@ -39,6 +43,12 @@ export const assets = {
     product_img10,
     product_img11,
     product_img12,
+    Img1,
+    Img2,
+    Img3,
+    Img4,
+    Img5
+
 }
 
 export const categories = ["Headphones", "Speakers", "Watch", "Earbuds", "Mouse", "Decoration"];

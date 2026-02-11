@@ -1,4 +1,5 @@
 'use client'
+
 import Link from "next/link";
 import {
   Mail,
@@ -18,7 +19,6 @@ import {
   HelpCircle,
   FileText,
   Scale,
-  ChevronRight
 } from "lucide-react";
 
 const Footer = () => {
@@ -54,10 +54,10 @@ const Footer = () => {
     {
       title: "GET IN TOUCH",
       links: [
-        { text: "+1-888-555-0123", path: "tel:+18885550123", icon: Phone },
-        { text: "support@gocart.com", path: "mailto:support@gocart.com", icon: Mail },
+        { text: "+91 9344095727", path: "tel:+919344095727", icon: Phone },
+        { text: "support@kingcart.com", path: "mailto:support@kingcart.com", icon: Mail },
         {
-          text: "500 Market Street, San Francisco",
+          text: "69 , Mettu Street,Srirangam, Trichy.",
           path: "https://maps.google.com",
           icon: MapPin
         },
@@ -73,20 +73,23 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-white border-t border-slate-200">
+    <footer className="bg-white border-t border-slate-200 pb-20 md:pb-0">
+      {/* ↑ pb-20 fixes mobile bottom nav overlap */}
 
-      
-
-      {/* Main Footer */}
       <div className="max-w-7xl mx-auto px-6">
+
+        {/* Main Footer */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 py-12 border-b">
 
           {/* Brand */}
           <div className="lg:col-span-2">
             <Link href="/" className="text-4xl font-bold flex items-center">
-              <span className="bg-green-500 text-white px-2 py-1 rounded-lg mr-1">King</span>
+              <span className="bg-green-500 text-white px-2 py-1 rounded-lg mr-1">
+                King
+              </span>
               cart<span className="text-green-600">.</span>
             </Link>
+
             <p className="mt-4 text-sm text-slate-500">
               Secure shopping, fast delivery, and verified sellers.
             </p>
@@ -96,6 +99,7 @@ const Footer = () => {
                 <Link
                   key={i}
                   href={s.link}
+                  target="_blank"
                   className="w-10 h-10 flex items-center justify-center rounded-full border hover:shadow-md transition"
                   style={{ backgroundColor: `${s.color}15` }}
                 >
@@ -111,6 +115,7 @@ const Footer = () => {
               <h3 className="font-bold text-sm mb-5 text-slate-800">
                 {section.title}
               </h3>
+
               <ul className="space-y-3">
                 {section.links.map((link, j) => {
                   const Icon = link.icon;
@@ -118,7 +123,7 @@ const Footer = () => {
                     <li key={j}>
                       <Link
                         href={link.path}
-                        className="flex items-start gap-2 mb-4 text-sm text-slate-500 hover:text-green-600 transition"
+                        className="flex items-start gap-2 text-sm text-slate-500 hover:text-green-600 transition"
                       >
                         <Icon size={16} className="mt-0.5 text-green-600" />
                         <span>{link.text}</span>
@@ -129,22 +134,31 @@ const Footer = () => {
               </ul>
             </div>
           ))}
+
         </div>
 
         {/* Bottom */}
-        <div className="py-6 flex flex-col md:flex-row justify-between  text-slate-500">
-          <p>© {new Date().getFullYear()} 
-            <Link href="/"  className="text-green-600 hover:underline">
-               Kingcart
+        <div className="py-6 flex flex-col gap-2 md:flex-row md:justify-between text-sm text-slate-500">
+          <p>
+            © {new Date().getFullYear()}{" "}
+            <Link href="/" className="text-green-600 hover:underline">
+              Kingcart
             </Link>
-             . All rights reserved.</p>
+            . All rights reserved.
+          </p>
+
           <p>
             Designed & Developed by{" "}
-            <Link href="https://buildmyweb.info/" target="_blank" className="text-green-600 hover:underline">
+            <Link
+              href="https://buildmyweb.info/"
+              target="_blank"
+              className="text-green-600 hover:underline"
+            >
               BuildMyWeb
             </Link>
           </p>
         </div>
+
       </div>
     </footer>
   );
