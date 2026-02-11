@@ -23,8 +23,8 @@ const StoreSidebar = ({storeInfo, closeMobileMenu}) => {
                 { name: 'Product Categories', href: '/store/categories', icon: LayoutListIcon },                
                 { name: 'Add Product', href: '/store/add-product', icon: SquarePlusIcon },
                 { name: 'Manage Products', href: '/store/manage-product', icon: SquarePenIcon },                
-                { name: 'Pending', href: '/store/orders/pending', icon: ShoppingBag, badge: "3" },
-                { name: 'Completed', href: '/store/orders/completed', icon: Gift },
+                { name: 'Orders', href: '/store/orders', icon: ShoppingBag, badge: "3" },
+                
                 { name: 'Sales Report', href: '/store/analytics', icon: BarChart2 },
                 { name: 'Store Settings', href: '/store/settings', icon: Settings },
                 { name: 'Help & Support', href: '/store/help', icon: HelpCircle },

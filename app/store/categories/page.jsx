@@ -17,8 +17,7 @@ export default function ProductCategoryManagement() {
     const [productCategories, setProductCategories] = useState([
       { id: 1, name: "Electronics", description: "Smartphones, Laptops, Tablets, and more", image: "/images/electronics.jpg", productCount: 42 },
       { id: 2, name: "Fashion", description: "Clothing, Shoes, Accessories, and more", image: "/images/fashion.jpg", productCount: 128 },
-      { id: 3, name: "Home & Kitchen", description: "Appliances, Furniture, Cookware, and more", image: "/images/home-kitchen.jpg", productCount: 65 },
-      { id: 4, name: "Beauty", description: "Skincare, Makeup, Haircare, and more", image: "/images/beauty.jpg", productCount: 36 }
+      
     ])
     const [showAddForm, setShowAddForm] = useState(false)
     const [showEditForm, setShowEditForm] = useState(false)
@@ -456,9 +455,9 @@ export default function ProductCategoryManagement() {
                 className="hidden"
               />
             </div>
-            <p className="mt-2 text-xs text-slate-500">
+            {/* <p className="mt-2 text-xs text-slate-500">
               Recommended: Square image, at least 600x600px
-            </p>
+            </p> */}
           </div>
           
           <div className="md:col-span-2 space-y-4">
@@ -475,9 +474,9 @@ export default function ProductCategoryManagement() {
                 className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-300 bg-slate-50"
                 required
               />
-              <p className="mt-1 text-xs text-slate-500">
+              {/* <p className="mt-1 text-xs text-slate-500">
                 A clear name helps customers find products easily
-              </p>
+              </p> */}
             </div>
             
             <div>
@@ -493,9 +492,9 @@ export default function ProductCategoryManagement() {
                 className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-300 bg-slate-50 resize-none"
                 required
               />
-              <p className="mt-1 text-xs text-slate-500">
+              {/* <p className="mt-1 text-xs text-slate-500">
                 Include keywords that customers might search for
-              </p>
+              </p> */}
             </div>
             
             <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-800 flex items-start gap-2 mt-6">

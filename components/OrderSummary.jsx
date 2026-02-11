@@ -1,4 +1,4 @@
-import { PlusIcon, SquarePenIcon, XIcon, CheckCircleIcon, ClockIcon, ShieldCheckIcon, CreditCardIcon } from 'lucide-react';
+import { PlusIcon, SquarePenIcon, XIcon, CheckCircleIcon, ClockIcon, ShieldCheckIcon, CreditCardIcon, TrendingDown } from 'lucide-react';
 import React, { useState } from 'react'
 import AddressModal from './AddressModal';
 import { useDispatch, useSelector } from 'react-redux';
@@ -6,49 +6,30 @@ import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { Protect, useAuth, useUser } from '@clerk/nextjs'
 import axios from 'axios';
-import { fetchCart } from '@/lib/features/cart/cartSlice';
+import { fetchCartThunk } from '@/lib/features/cart/cartSlice';
 
-const OrderSummary = ({ totalPrice, items }) => {
-    const { user } = useUser()
-    const { getToken } = useAuth()
-    const dispatch = useDispatch()
+// Order Summary Component
+const OrderSummary = ({ totalPrice, items, appliedCoupon = null, discount = 0 }) => {
+    const dispatch = useDispatch();
     const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
-
     const router = useRouter();
 
-    const addressList = useSelector(state => state.address.list);
+    const addressList = useSelector(state => state.address?.list || []);
 
     const [paymentMethod, setPaymentMethod] = useState('COD');
     const [selectedAddress, setSelectedAddress] = useState(null);
     const [showAddressModal, setShowAddressModal] = useState(false);
-    const [couponCodeInput, setCouponCodeInput] = useState('');
-    const [coupon, setCoupon] = useState('');
-
-    const handleCouponCode = async (event) => {
-        event.preventDefault();
-        try {
-            if (!user) {
-                return toast('Please login to proceed')
-            }
-            const token = await getToken();
-            const { data } = await axios.post('/api/coupon', { code: couponCodeInput }, {
-                headers: { Authorization: `Bearer ${token}` }
-            })
-            setCoupon(data.coupon)
-            toast.success('Coupon Applied')
-        } catch (error) {
-            toast.error(error?.response?.data?.error || error.message)
-        }
-    }
+    const { user } = useUser();
+    const { getToken } = useAuth();
 
     const handlePlaceOrder = async (e) => {
         e.preventDefault();
         try {
             if (!user) {
-                return toast('Please login to place an order')
+                return toast('Please login to place an order');
             }
             if (!selectedAddress) {
-                return toast('Please select an address')
+                return toast('Please select an address');
             }
             const token = await getToken();
 
@@ -56,31 +37,32 @@ const OrderSummary = ({ totalPrice, items }) => {
                 addressId: selectedAddress.id,
                 items,
                 paymentMethod
-            }
+            };
 
-            if (coupon) {
-                orderData.couponCode = coupon.code
+            // Include coupon code if applied
+            if (appliedCoupon) {
+                orderData.couponCode = appliedCoupon.code;
             }
-            // create order
+            
+            // Create order
             const { data } = await axios.post('/api/orders', orderData, {
                 headers: { Authorization: `Bearer ${token}` }
-            })
+            });
 
             if (paymentMethod === 'STRIPE') {
                 window.location.href = data.session.url;
             } else {
-                toast.success(data.message)
-                router.push('/orders')
-                dispatch(fetchCart({ getToken }))
+                toast.success(data.message);
+                router.push('/orders');
+                dispatch(fetchCartThunk({ getToken }));  // Updated to use fetchCartThunk
             }
-
         } catch (error) {
-            toast.error(error?.response?.data?.error || error.message)
+            toast.error(error?.response?.data?.error || error.message);
         }
-    }
+    };
 
     return (
-        <div className='w-full max-w-lg lg:max-w-[340px] bg-white border border-slate-200 text-slate-500 text-sm rounded-xl shadow-sm overflow-hidden'>
+        <div className='w-full max-w-lg lg:max-w-[340px] bg-white border border-slate-200 text-slate-500 text-sm rounded-xl shadow-sm overflow-hidden sticky top-4'>
             {/* Order Summary Header */}
             <div className="bg-slate-50 p-5 border-b border-slate-100">
                 <h2 className='text-xl font-semibold text-slate-700'>Order Summary</h2>
@@ -172,66 +154,48 @@ const OrderSummary = ({ totalPrice, items }) => {
                     )}
                 </div>
 
-                {/* Coupon Section */}
+                {/* Price Breakdown */}
                 <div className='pb-4 border-b border-slate-200'>
                     <div className='flex justify-between mb-4'>
                         <div className='flex flex-col gap-2 text-slate-600'>
                             <p>Subtotal:</p>
                             <p>Shipping:</p>
-                            {coupon && <p className="text-green-600 font-medium">Discount:</p>}
+                            {appliedCoupon && (
+                                <p className="text-green-600 font-medium flex items-center gap-1">
+                                    <TrendingDown size={14} />
+                                    Discount ({appliedCoupon.discount}%):
+                                </p>
+                            )}
                         </div>
                         <div className='flex flex-col gap-2 font-medium text-right'>
-                            <p>{currency}{totalPrice.toLocaleString()}</p>
+                            <p>₹ {totalPrice.toLocaleString()}</p>
                             <p>
                                 <Protect 
                                     plan={'plus'} 
                                     fallback={
-                                        <span className="text-slate-700">{currency}5</span>
+                                        <span className="text-slate-700">₹ 5</span>
                                     }
                                 >
                                     <span className="text-green-600">Free</span>
                                 </Protect>
                             </p>
-                            {coupon && (
-                                <p className="text-green-600">{`-${currency}${(coupon.discount / 100 * totalPrice).toFixed(2)}`}</p>
+                            {appliedCoupon && (
+                                <p className="text-green-600">- ₹ {discount.toFixed(2)}</p>
                             )}
                         </div>
                     </div>
                     
-                    {/* Coupon Code Input */}
-                    {!coupon ? (
-                        <form 
-                            onSubmit={e => toast.promise(handleCouponCode(e), { loading: 'Checking Coupon...' })} 
-                            className='flex justify-center gap-3 mt-3 relative'
-                        >
-                            <input 
-                                onChange={(e) => setCouponCodeInput(e.target.value)} 
-                                value={couponCodeInput} 
-                                type="text" 
-                                placeholder='Enter coupon code' 
-                                className='border border-slate-300 p-2.5 rounded-lg w-full outline-none focus:border-green-500 transition-colors pl-4 pr-24' 
-                            />
-                            <button 
-                                className='absolute right-1 top-1 bg-slate-700 text-white px-4 py-1.5 rounded-lg hover:bg-slate-800 active:scale-95 transition-all text-xs font-medium'
-                            >
-                                Apply
-                            </button>
-                        </form>
-                    ) : (
-                        <div className='w-full flex items-center gap-3 bg-green-50 border border-green-100 p-3 rounded-lg mt-2'>
+                    {/* Applied Coupon Badge */}
+                    {appliedCoupon && (
+                        <div className='w-full flex items-center gap-2 bg-green-50 border border-green-100 p-2.5 rounded-lg mt-2'>
                             <div className="bg-green-500/10 text-green-600 rounded-full p-1">
-                                <CheckCircleIcon size={16} />
+                                <CheckCircleIcon size={14} />
                             </div>
                             <div className="flex-1">
-                                <p className="text-sm font-medium text-green-700">Coupon Applied: <span className='ml-1'>{coupon.code.toUpperCase()}</span></p>
-                                <p className="text-xs text-green-600">{coupon.description}</p>
+                                <p className="text-xs font-medium text-green-700">
+                                    Coupon: <span className='font-semibold'>{appliedCoupon.code}</span>
+                                </p>
                             </div>
-                            <button 
-                                onClick={() => setCoupon('')} 
-                                className="text-slate-500 hover:text-red-500 transition-colors"
-                            >
-                                <XIcon size={18} />
-                            </button>
                         </div>
                     )}
                 </div>
@@ -243,9 +207,9 @@ const OrderSummary = ({ totalPrice, items }) => {
                         <p className='text-xl font-bold text-slate-800'>
                             <Protect 
                                 plan={'plus'} 
-                                fallback={`${currency}${coupon ? (totalPrice + 5 - (coupon.discount / 100 * totalPrice)).toFixed(2) : (totalPrice + 5).toLocaleString()}`}
+                                fallback={`₹ ${(totalPrice + 5 - discount).toFixed(2)}`}
                             >  
-                                {currency}{coupon ? (totalPrice - (coupon.discount / 100 * totalPrice)).toFixed(2) : totalPrice.toLocaleString()}
+                                ₹ {(totalPrice - discount).toFixed(2)}
                             </Protect>
                         </p>
                     </div>
@@ -257,7 +221,7 @@ const OrderSummary = ({ totalPrice, items }) => {
                         Place Order
                     </button>
                     
-                    {/* Trust badges - New Addition */}
+                    {/* Trust badges */}
                     <div className="flex items-center justify-center gap-4 mt-4 pt-4 border-t border-slate-100">
                         <div className="flex items-center gap-1 text-xs text-slate-500">
                             <ShieldCheckIcon size={14} />
@@ -273,7 +237,7 @@ const OrderSummary = ({ totalPrice, items }) => {
             
             {showAddressModal && <AddressModal setShowAddressModal={setShowAddressModal} />}
         </div>
-    )
-}
+    );
+};
 
 export default OrderSummary

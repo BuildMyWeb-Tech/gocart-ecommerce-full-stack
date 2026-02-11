@@ -4,7 +4,7 @@ import Loading from "@/components/Loading"
 import { useAuth } from "@clerk/nextjs"
 import axios from "axios"
 import { 
-  CircleDollarSignIcon, 
+  IndianRupee , 
   ShoppingBasketIcon, 
   StarIcon, 
   TagsIcon, 
@@ -22,7 +22,7 @@ import toast from "react-hot-toast"
 
 export default function Dashboard() {
     const {getToken} = useAuth()
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$'
+    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹'
     const router = useRouter()
 
     const [loading, setLoading] = useState(true)
@@ -64,8 +64,8 @@ export default function Dashboard() {
         },
         { 
             title: 'Total Earnings', 
-            value: currency + dashboardData.totalEarnings, 
-            icon: CircleDollarSignIcon, 
+            value: '₹' + dashboardData.totalEarnings, 
+            icon: IndianRupee , 
             growth: generateGrowth(),
             bgGradient: 'from-green-50 to-green-100',
             iconBg: 'bg-green-100',
