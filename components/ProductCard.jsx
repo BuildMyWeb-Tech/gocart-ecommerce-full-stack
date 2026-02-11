@@ -79,6 +79,19 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             };
             
             dispatch(addToCart({ product: cartProduct }));
+            
+            // Save cart to localStorage
+            setTimeout(() => {
+                const state = JSON.stringify({
+                    cart: {
+                        items: cartItems.concat([cartProduct]),
+                        totalPrice: cartItems.reduce((total, item) => total + item.price * item.quantity, 0) + product.price,
+                        total: cartItems.length + 1
+                    }
+                });
+                localStorage.setItem('redux-state', state);
+            }, 100);
+            
             toast.success(`${product.name} added to cart!`, {
                 icon: '🛒',
                 style: {
@@ -131,10 +144,6 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
         }
     };
 
-    // Rest of your component remains the same
-    // ...
-
-
     return (
         <div 
             className='group max-xl:mx-auto relative block transform transition-all duration-300 hover:-translate-y-1.5 w-full'
@@ -159,7 +168,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                     
                     {/* Product Images with fade transition */}
                     <div className="relative w-full h-full flex items-center justify-center p-4">
-                        {product.images.map((image, index) => (
+                        {product.images && product.images.map((image, index) => (
                             <Image 
                                 key={index}
                                 width={500} 
@@ -177,7 +186,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                     </div>
                     
                     {/* Image indicators */}
-                    {product.images.length > 1 && (
+                    {product.images && product.images.length > 1 && (
                         <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 flex gap-1.5 z-20">
                             {product.images.map((_, index) => (
                                 <div 
@@ -239,7 +248,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                                     className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-md transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
                                 >
                                     <ShoppingCart size={18} /> 
-                                    {isInCart ? 'Remove from Cart' : 'Add to Cart'}
+                                    {isInCart ? 'Added to Cart' : 'Add to Cart'}
                                 </button>
                             </div>
                         )}
@@ -310,7 +319,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                                 ))}
                             </div>
                             <span className="text-xs text-slate-600 font-medium">
-                                {rating.toFixed(1)} | {product.rating.length} Reviews
+                                {rating.toFixed(1)} | {product.rating?.length || 0} Reviews
                             </span>
                         </div>
                         
@@ -338,7 +347,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                     )}
 
                     {/* Add to Cart and View Details buttons for non-hover state (mobile-friendly) */}
-                    <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                    <div className="flex flex-col sm:flex-row gap-1 mt-4">
                         <Link 
                             href={`/product/${product.id}`}
                             className="flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-md transition-all duration-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium border border-slate-200 hover:border-slate-300"
@@ -365,7 +374,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                             ) : isInCart ? (
                                 <>
                                     <CheckCircle size={16} className="text-red-500" />                                    
-                                    Remove from Cart
+                                    Added to Cart
                                 </>
                             ) : (
                                 <>

@@ -6,38 +6,40 @@ import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchProducts } from "@/lib/features/product/productSlice";
 import { useUser, useAuth } from "@clerk/nextjs";
-import { fetchCart, uploadCart } from "@/lib/features/cart/cartSlice";
+
+// ✅ Correct thunk imports
+import { fetchCartThunk, uploadCartThunk } from "@/lib/features/cart/cartSlice";
 import { fetchAddress } from "@/lib/features/address/addressSlice";
 import { fetchUserRatings } from "@/lib/features/rating/ratingSlice";
 
 export default function PublicLayout({ children }) {
 
     const dispatch = useDispatch()
-    const {user} = useUser()
-    const {getToken} = useAuth()
+    const { user } = useUser()
+    const { getToken } = useAuth()
 
-    const {cartItems} = useSelector((state)=>state.cart)
+    const { items } = useSelector((state) => state.cart)
 
-    useEffect(()=>{
+    // Fetch products on load
+    useEffect(() => {
         dispatch(fetchProducts({}))
-    },[])
+    }, [])
 
-    useEffect(()=>{
-        if(user){
-            dispatch(fetchCart({getToken}))
-            dispatch(fetchAddress({getToken}))
-            dispatch(fetchUserRatings({getToken}))
+    // Fetch cart + address + ratings when user logs in
+    useEffect(() => {
+        if (user) {
+            dispatch(fetchCartThunk({ getToken }))
+            dispatch(fetchAddress({ getToken }))
+            dispatch(fetchUserRatings({ getToken }))
         }
-    },[user])
+    }, [user])
 
-    useEffect(()=>{
-        if(user){
-            dispatch(uploadCart({getToken}))
+    // Upload cart to backend when cart updates
+    useEffect(() => {
+        if (user) {
+            dispatch(uploadCartThunk({ getToken }))
         }
-    },[cartItems])
-
-
-
+    }, [items])
 
     return (
         <>

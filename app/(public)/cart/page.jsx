@@ -416,15 +416,7 @@ const CartPage = () => {
                                 </div>
                             </div>
                             
-                            <div className="mt-6 text-center text-sm text-slate-500 space-y-3">
-                                <p>We accept all major payment methods</p>
-                                <div className="flex justify-center gap-2">
-                                    <div className="w-10 h-6 bg-blue-600 rounded flex items-center justify-center text-white text-xs font-bold">VISA</div>
-                                    <div className="w-10 h-6 bg-red-500 rounded flex items-center justify-center text-white text-xs font-bold">MC</div>
-                                    <div className="w-10 h-6 bg-slate-800 rounded flex items-center justify-center text-white text-xs font-bold">AMEX</div>
-                                    <div className="w-10 h-6 bg-yellow-500 rounded flex items-center justify-center text-white text-xs font-bold">PP</div>
-                                </div>
-                            </div>
+                            
                         </div>
                     </div>
                 </div>

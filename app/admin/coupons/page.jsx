@@ -55,7 +55,7 @@ const DeleteConfirmationModal = ({ isOpen, onClose, onDelete, couponCode, isDele
                                         <h3 className="text-lg font-medium leading-6 text-slate-900">Delete Coupon</h3>
                                         <div className="mt-2">
                                             <p className="text-sm text-slate-600">
-                                                Are you sure you want to delete the coupon <span className="font-semibold text-blue-600">{couponCode}</span>? This action cannot be undone.
+                                                Are you sure you want to delete the coupon <span className="font-semibold text-green-600">{couponCode}</span>? This action cannot be undone.
                                             </p>
                                         </div>
                                     </div>
@@ -231,7 +231,7 @@ export default function AdminCoupons() {
                     {/* Add Coupon */}
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-8 md:mb-0 md:w-1/3">
                         <div className="flex items-center gap-2 mb-6">
-                            <span className="bg-gradient-to-r from-blue-500 to-indigo-500 p-2 rounded-md text-white">
+                            <span className="bg-gradient-to-r from-green-500 to-green-500 p-2 rounded-md text-white">
                                 <Ticket size={20} />
                             </span>
                             <h2 className="text-xl md:text-2xl">Add <span className="text-slate-800 font-semibold">Coupon</span></h2>
@@ -240,13 +240,13 @@ export default function AdminCoupons() {
                         <form onSubmit={handleAddCoupon} className="text-sm">
                             <div className="flex gap-3 max-sm:flex-col">
                                 <div className="relative w-full group">
-                                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 group-focus-within:text-green-500 transition-colors">
                                         <BadgePercent size={16} />
                                     </div>
                                     <input 
                                         type="text" 
                                         placeholder="Coupon Code" 
-                                        className="w-full mt-2 p-2.5 pl-10 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all"
+                                        className="w-full mt-2 p-2.5 pl-10 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400 transition-all"
                                         name="code" 
                                         value={newCoupon.code} 
                                         onChange={handleChange}
@@ -259,7 +259,7 @@ export default function AdminCoupons() {
                                 </div>
                                 
                                 <div className="relative w-full group">
-                                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400 group-focus-within:text-green-500 transition-colors">
                                         <Percent size={16} />
                                     </div>
                                     <input 
@@ -267,7 +267,7 @@ export default function AdminCoupons() {
                                         placeholder="Discount (%)" 
                                         min={1} 
                                         max={100} 
-                                        className="w-full mt-2 p-2.5 pl-10 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all"
+                                        className="w-full mt-2 p-2.5 pl-10 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400 transition-all"
                                         name="discount" 
                                         value={newCoupon.discount} 
                                         onChange={handleChange}
@@ -279,7 +279,7 @@ export default function AdminCoupons() {
                             <div className="relative w-full mt-4 group">
                                 <textarea 
                                     placeholder="Coupon Description - Explain usage terms" 
-                                    className="w-full p-3.5 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all min-h-[100px]"
+                                    className="w-full p-3.5 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400 transition-all min-h-[100px]"
                                     name="description" 
                                     value={newCoupon.description} 
                                     onChange={handleChange}
@@ -299,7 +299,7 @@ export default function AdminCoupons() {
                                 <input 
                                     type="date" 
                                     placeholder="Coupon Expires At" 
-                                    className="w-full p-2.5 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition-all"
+                                    className="w-full p-2.5 border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400 transition-all"
                                     name="expiresAt" 
                                     value={format(new Date(newCoupon.expiresAt), 'yyyy-MM-dd')} 
                                     onChange={handleChange} 
@@ -317,7 +317,7 @@ export default function AdminCoupons() {
                                             checked={newCoupon.forNewUser}
                                             onChange={(e) => setNewCoupon({ ...newCoupon, forNewUser: e.target.checked })}
                                         />
-                                        <div className="w-11 h-6 bg-slate-300 rounded-full peer peer-checked:bg-blue-600 peer-focus:ring-2 peer-focus:ring-blue-200 transition-colors duration-200"></div>
+                                        <div className="w-11 h-6 bg-slate-300 rounded-full peer peer-checked:bg-green-600 peer-focus:ring-2 peer-focus:ring-green-200 transition-colors duration-200"></div>
                                         <span className="dot absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></span>
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -335,7 +335,7 @@ export default function AdminCoupons() {
                                             checked={newCoupon.forMember}
                                             onChange={(e) => setNewCoupon({ ...newCoupon, forMember: e.target.checked })}
                                         />
-                                        <div className="w-11 h-6 bg-slate-300 rounded-full peer peer-checked:bg-blue-600 peer-focus:ring-2 peer-focus:ring-blue-200 transition-colors duration-200"></div>
+                                        <div className="w-11 h-6 bg-slate-300 rounded-full peer peer-checked:bg-green-600 peer-focus:ring-2 peer-focus:ring-green-200 transition-colors duration-200"></div>
                                         <span className="dot absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></span>
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -353,7 +353,7 @@ export default function AdminCoupons() {
                                             checked={newCoupon.isPublic}
                                             onChange={(e) => setNewCoupon({ ...newCoupon, isPublic: e.target.checked })}
                                         />
-                                        <div className="w-11 h-6 bg-slate-300 rounded-full peer peer-checked:bg-blue-600 peer-focus:ring-2 peer-focus:ring-blue-200 transition-colors duration-200"></div>
+                                        <div className="w-11 h-6 bg-slate-300 rounded-full peer peer-checked:bg-green-600 peer-focus:ring-2 peer-focus:ring-green-200 transition-colors duration-200"></div>
                                         <span className="dot absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform duration-200 ease-in-out peer-checked:translate-x-5"></span>
                                     </label>
                                     <div className="flex items-center gap-2">
@@ -366,7 +366,7 @@ export default function AdminCoupons() {
                             <button 
                                 type="submit"
                                 disabled={isAddingCoupon}
-                                className="mt-6 p-3 w-full rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-medium active:scale-[0.98] transition flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="mt-6 p-3 w-full rounded-lg bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-medium active:scale-[0.98] transition flex items-center justify-center gap-2 shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {isAddingCoupon ? (
                                     <>
@@ -389,7 +389,7 @@ export default function AdminCoupons() {
                     {/* List Coupons */}
                     <div className="md:flex-1">
                         <div className="flex flex-wrap items-center gap-3 mb-4">
-                            <span className="bg-gradient-to-r from-purple-500 to-indigo-500 p-2 rounded-md text-white">
+                            <span className="bg-gradient-to-r from-green-500 to-green-500 p-2 rounded-md text-white">
                                 <Ticket size={20} />
                             </span>
                             <h2 className="text-xl md:text-2xl">Active <span className="text-slate-800 font-semibold">Coupons</span></h2>
@@ -403,7 +403,7 @@ export default function AdminCoupons() {
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 placeholder="Search coupons by code or description..."
-                                className="w-full p-2.5 pl-10 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400 transition-all"
+                                className="w-full p-2.5 pl-10 pr-10 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400 transition-all"
                             />
                             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                             {searchTerm && (
@@ -419,7 +419,7 @@ export default function AdminCoupons() {
                         <div className="overflow-x-auto mt-4 rounded-xl border border-slate-200 shadow-sm bg-white">
                             {loading ? (
                                 <div className="flex flex-col items-center justify-center py-16">
-                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
                                     <p className="mt-4 text-slate-500">Loading coupons...</p>
                                 </div>
                             ) : filteredCoupons.length > 0 ? (
@@ -455,7 +455,7 @@ export default function AdminCoupons() {
                                                     >
                                                         <td className="py-3 px-4">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded text-sm">
+                                                                <span className="font-medium text-green-600 bg-green-50 px-2 py-1 rounded text-sm">
                                                                     {coupon.code}
                                                                 </span>
                                                                 <button 
@@ -493,11 +493,11 @@ export default function AdminCoupons() {
                                                         </td>
                                                         <td className="py-3 px-4">
                                                             <div className="flex flex-wrap gap-1">
-                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${coupon.forNewUser ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${coupon.forNewUser ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
                                                                     {coupon.forNewUser ? 'New Users' : 'All Users'}
                                                                 </span>
                                                                 
-                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${coupon.forMember ? 'bg-purple-50 text-purple-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${coupon.forMember ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'}`}>
                                                                     {coupon.forMember ? 'Members' : 'Anyone'}
                                                                 </span>
                                                                 
@@ -530,7 +530,7 @@ export default function AdminCoupons() {
                                             <p className="text-slate-400 text-sm">Try a different search term or clear filters</p>
                                             <button 
                                                 onClick={() => setSearchTerm('')}
-                                                className="mt-4 px-4 py-2 bg-purple-50 text-purple-600 rounded-md hover:bg-purple-100 transition-colors text-sm font-medium"
+                                                className="mt-4 px-4 py-2 bg-green-50 text-green-600 rounded-md hover:bg-green-100 transition-colors text-sm font-medium"
                                             >
                                                 Clear Search
                                             </button>
@@ -545,7 +545,7 @@ export default function AdminCoupons() {
                         {/* Quick stats */}
                         {coupons.length > 0 && (
                             <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <div className="bg-blue-50 text-blue-700 p-3 rounded-lg flex items-center gap-2 text-sm">
+                                <div className="bg-green-50 text-green-700 p-3 rounded-lg flex items-center gap-2 text-sm">
                                     <BadgePercent size={18} />
                                     <span>{coupons.length} Active Coupons</span>
                                 </div>
@@ -553,7 +553,7 @@ export default function AdminCoupons() {
                                     <Percent size={18} />
                                     <span>Max Discount: {Math.max(...coupons.map(c => c.discount))}%</span>
                                 </div>
-                                <div className="bg-purple-50 text-purple-700 p-3 rounded-lg flex items-center gap-2 text-sm">
+                                <div className="bg-green-50 text-green-700 p-3 rounded-lg flex items-center gap-2 text-sm">
                                     <Calendar size={18} />
                                     <span>{soonToExpire.length} Expiring Soon</span>
                                 </div>

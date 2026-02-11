@@ -426,7 +426,7 @@ export default function StoreManageProducts() {
                                             <td className="px-4 py-4 max-w-[300px] hidden md:table-cell">
                                                 <div className="text-slate-600 line-clamp-2 text-xs">{product.description}</div>
                                                 <div className="text-xs text-slate-400 mt-1">
-                                                    Added: {new Date(product.createdAt).toLocaleDateString()}
+                                                    {new Date(product.createdAt).toLocaleDateString()}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-4 hidden md:table-cell">

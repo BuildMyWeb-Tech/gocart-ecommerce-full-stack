@@ -306,7 +306,7 @@ const Navbar = () => {
             <div className="h-16 sm:h-20"></div>
             
             {/* Page content spacing to accommodate fixed bottom nav on mobile */}
-            <div className="h-14 sm:h-0 mb-4"></div>
+            <div className=" sm:h-0 "></div>
         </>
     );
 };
