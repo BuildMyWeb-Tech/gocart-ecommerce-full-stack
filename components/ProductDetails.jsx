@@ -29,7 +29,12 @@ const ProductDetails = ({ product }) => {
   const productId = product.id;
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
 
-  const cart = useSelector(state => state.cart.cartItems);
+  // Fixed: Get the items array from state.cart.items
+  const cartItems = useSelector(state => state.cart.items || []);
+  
+  // Create helper to check if product is in cart
+  const itemInCart = cartItems.find(item => item.id === productId);
+  
   const dispatch = useDispatch();
   const router = useRouter();
 
@@ -49,7 +54,7 @@ const ProductDetails = ({ product }) => {
   const addToCartHandler = () => {
     if (product.stock <= 0) return;
     
-    dispatch(addToCart({ productId }));
+    dispatch(addToCart({ product }));
     toast.success(`${product.name} added to your cart!`, {
       icon: '🛒',
       style: {
@@ -70,18 +75,6 @@ const ProductDetails = ({ product }) => {
 
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-      {/* Breadcrumb navigation (simple version) */}
-      {/* <div className="flex items-center gap-1 text-xs text-slate-500 p-4 border-b border-slate-100">
-        <button onClick={() => router.back()} className="flex items-center gap-1 hover:text-blue-600 transition-colors">
-          <ArrowLeftIcon size={14} />
-          Back
-        </button>
-        <span>/</span>
-        <span>{product.category}</span>
-        <span>/</span>
-        <span className="text-slate-800 font-medium truncate max-w-[150px]">{product.name}</span>
-      </div> */}
-
       <div className="flex max-lg:flex-col gap-6 lg:gap-12 p-6 lg:p-8">
         {/* ================= IMAGES ================= */}
         <div className="flex max-sm:flex-col-reverse gap-4 md:gap-6 lg:w-[45%]">
@@ -262,9 +255,10 @@ const ProductDetails = ({ product }) => {
             </div>
           )}
 
-          {/* CART ACTIONS */}
+          {/* CART ACTIONS - FIXED SECTION */}
           <div className="flex flex-wrap items-center gap-4 mt-6">
-            {cart[productId] ? (
+            {/* Check if item is in cart using our helper */}
+            {itemInCart ? (
               <div className="flex flex-col">
                 <p className="text-xs text-slate-600 mb-1">Quantity</p>
                 <Counter productId={productId} />
@@ -280,42 +274,22 @@ const ProductDetails = ({ product }) => {
 
             <button
               onClick={() =>
-                cart[productId]
+                itemInCart
                   ? router.push('/cart')
                   : addToCartHandler()
               }
-              disabled={product.stock <= 0 && !cart[productId]}
+              disabled={product.stock <= 0 && !itemInCart}
               className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium shadow-sm hover:shadow transition-all ${
-                product.stock > 0 || cart[productId]
-                  ? cart[productId]
+                product.stock > 0 || itemInCart
+                  ? itemInCart
                     ? 'bg-green-600 hover:bg-green-700 text-white'
                     : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
                   : 'bg-slate-200 text-slate-500 cursor-not-allowed'
               }`}
             >
               <ShoppingCartIcon size={18} />
-              {cart[productId] ? 'View Cart' : 'Add to Cart'}
+              {itemInCart ? 'View Cart' : 'Add to Cart'}
             </button>
-            
-            {/* <button
-              className="flex items-center justify-center p-3.5 rounded-xl font-medium border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
-              onClick={(e) => {
-                e.preventDefault();
-                setIsWishlist(!isWishlist);
-                if (!isWishlist) {
-                  toast.success('Added to wishlist!', {
-                    icon: '❤️',
-                    style: {
-                      borderRadius: '10px',
-                      background: '#333',
-                      color: '#fff',
-                    }
-                  });
-                }
-              }}
-            >
-              <HeartIcon size={20} fill={isWishlist ? "#ef4444" : "none"} className={isWishlist ? "text-red-500" : ""} />
-            </button> */}
           </div>
           
           {/* TRUST FEATURES */}

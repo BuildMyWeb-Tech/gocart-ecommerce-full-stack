@@ -5,13 +5,37 @@ import axios from "axios"
 import Image from "next/image"
 import { useEffect, useState, useRef } from "react"
 import { toast } from "react-hot-toast"
-import { 
-  PlusCircle, Camera, ImagePlus, Tag, Search, ArrowLeft, 
-  X, Edit, Trash2, Upload, Scissors, CheckCircle, Pencil, 
-  AlertTriangle, Info, SlidersHorizontal, ChevronLeft,
-  Package, ShoppingBag, Layers, BarChart4, Filter, Grid, List,
-  Clock, TrendingUp, Star, ChevronRight, Image as ImageIcon
-} from "lucide-react"
+import {
+  PlusCircle,
+  Camera,
+  ImagePlus,
+  Tag,
+  Search,
+  ArrowLeft,
+  X,
+  Edit,
+  Trash2,
+  Upload,
+  Scissors,
+  CheckCircle,
+  Pencil,
+  AlertTriangle,
+  Info,
+  SlidersHorizontal,
+  ChevronLeft,
+  Package,
+  ShoppingBag,
+  Layers,
+  BarChart,
+  Filter,
+  LayoutGrid,
+  List,
+  Clock,
+  TrendingUp,
+  Star,
+  ChevronRight
+} from "lucide-react";
+
 
 export default function ProductCategoryManagement() {
     const [productCategories, setProductCategories] = useState([
@@ -229,7 +253,7 @@ export default function ProductCategoryManagement() {
                   onClick={() => setViewMode('grid')} 
                   className={`p-2.5 ${viewMode === 'grid' ? 'bg-green-50 text-green-600' : 'text-slate-500 hover:bg-slate-50'} transition-colors`}
                 >
-                  <Grid size={18} />
+                  <LayoutGrid size={18} />
                 </button>
                 <button 
                   onClick={() => setViewMode('list')} 
@@ -441,7 +465,7 @@ export default function ProductCategoryManagement() {
               ) : (
                 <>
                   <div className="bg-green-50 p-3 rounded-full mb-2 text-green-500">
-                    <ImageIcon size={28} />
+                    <ImagePlus size={28} />
                   </div>
                   <p className="text-slate-700 text-center text-sm font-medium">Upload category image</p>
                   <p className="text-slate-500 text-center text-xs mt-1">Click to browse</p>
@@ -585,7 +609,7 @@ export default function ProductCategoryManagement() {
               ) : (
                 <>
                   <div className="bg-green-50 p-3 rounded-full mb-2 text-green-500">
-                    <ImageIcon size={28} />
+                    <ImagePlus size={28} />
                   </div>
                   <p className="text-slate-700 text-center text-sm font-medium">Upload category image</p>
                   <p className="text-slate-500 text-center text-xs mt-1">Click to browse</p>

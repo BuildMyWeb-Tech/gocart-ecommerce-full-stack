@@ -34,9 +34,12 @@ import {
 } from "lucide-react";
 
 import { useReactToPrint } from "react-to-print"
-import * as XLSX from "xlsx"
-import { jsPDF } from "jspdf"
-import "jspdf-autotable"
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+
+
+
 
 export default function StoreOrders() {
     const [orders, setOrders] = useState([])
@@ -62,87 +65,45 @@ export default function StoreOrders() {
         onAfterPrint: () => toast.success('Invoice printed successfully!')
     })
     
-    const generatePDF = (order) => {
-        const doc = new jsPDF()
-        
-        // Add header with logo and title
-        doc.setFillColor(59, 130, 246)
-        doc.rect(0, 0, doc.internal.pageSize.width, 40, 'F')
-        doc.setTextColor(255, 255, 255)
-        doc.setFontSize(22)
-        doc.text(`INVOICE #${order.id.slice(0, 8)}`, 20, 25)
-        
-        // Add order info
-        doc.setTextColor(0, 0, 0)
-        doc.setFontSize(12)
-        doc.text(`Date: ${new Date(order.createdAt).toLocaleDateString()}`, 20, 50)
-        doc.text(`Status: ${order.status}`, 20, 60)
-        
-        // Customer info
-        doc.text('Customer Details:', 20, 75)
-        doc.text(`Name: ${order.user?.name || 'N/A'}`, 25, 85)
-        doc.text(`Email: ${order.user?.email || 'N/A'}`, 25, 95)
-        doc.text(`Phone: ${order.address?.phone || 'N/A'}`, 25, 105)
-        
-        // Shipping address
-        doc.text('Shipping Address:', 120, 75)
-        const addressText = order.address?.street 
-            ? `${order.address.street}, ${order.address.city}, ${order.address.state}, ${order.address.zip}, ${order.address.country}`
-            : 'N/A'
-        doc.text(addressText, 125, 85, { maxWidth: 70 })
-        
-        // Items table
-        const tableColumn = ["Product", "Qty", "Price", "Subtotal"]
-        const tableRows = []
-        
-        order.orderItems.forEach(item => {
-            const productData = [
-                item.product?.name || 'Unknown Product',
-                item.quantity,
-                `₹${item.price}`,
-                `₹${(item.price * item.quantity).toFixed(2)}`
-            ]
-            tableRows.push(productData)
-        })
-        
-        doc.autoTable({
-            head: [tableColumn],
-            body: tableRows,
-            startY: 120,
-            theme: 'grid',
-            styles: {
-                fontSize: 10,
-                cellPadding: 3,
-            },
-            headStyles: {
-                fillColor: [59, 130, 246],
-                textColor: [255, 255, 255],
-                fontStyle: 'bold',
-            },
-        })
-        
-        const finalY = doc.lastAutoTable.finalY + 10
-        
-        // Coupon info if used
-        if (order.isCouponUsed) {
-            doc.text(`Coupon Applied: ${order.coupon.code} (${order.coupon.discount}% off)`, 20, finalY)
-        }
-        
-        // Total
-        doc.setFontSize(14)
-        doc.setFont(undefined, 'bold')
-        doc.text(`Total Amount: ₹${order.total}`, 140, finalY + 10)
-        
-        // Footer
-        doc.setFontSize(10)
-        doc.setFont(undefined, 'normal')
-        doc.setTextColor(100, 100, 100)
-        doc.text('Thank you for your business!', 20, finalY + 25)
-        
-        // Save the PDF
-        doc.save(`Invoice-${order.id.slice(0, 8)}.pdf`)
-        toast.success('Invoice downloaded as PDF!')
-    }
+const generatePDF = (order) => {
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFontSize(18);
+    doc.text(`INVOICE #${order.id.slice(0, 8)}`, 20, 20);
+
+    // Order info
+    doc.setFontSize(12);
+    doc.text(`Date: ${new Date(order.createdAt).toLocaleDateString()}`, 20, 35);
+    doc.text(`Customer: ${order.user?.name || "N/A"}`, 20, 45);
+    doc.text(`Email: ${order.user?.email || "N/A"}`, 20, 55);
+
+    // Items Table
+    const tableColumn = ["Product", "Qty", "Price", "Subtotal"];
+    const tableRows = order.orderItems.map(item => [
+        item.product?.name || "Unknown",
+        item.quantity,
+        `₹${item.price}`,
+        `₹${(item.price * item.quantity).toFixed(2)}`
+    ]);
+
+    autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 70,
+        theme: "grid"
+    });
+
+    const finalY = doc.lastAutoTable.finalY + 10;
+
+    // Total
+    doc.setFontSize(14);
+    doc.text(`Total Amount: ₹${order.total}`, 20, finalY);
+
+    doc.save(`Invoice-${order.id.slice(0, 8)}.pdf`);
+    toast.success("Invoice downloaded!");
+};
+
 
     const fetchOrders = async () => {
        try {
@@ -179,6 +140,8 @@ export default function StoreOrders() {
         setIsModalOpen(true)
     }
 
+
+    
     const closeModal = () => {
         setSelectedOrder(null)
         setIsModalOpen(false)
@@ -211,83 +174,59 @@ export default function StoreOrders() {
     }
 
     // Export orders to Excel
-    const exportToExcel = () => {
-        const workbook = XLSX.utils.book_new()
-        
-        // Process data for export
-        const exportData = orders.map(order => ({
-            'Order ID': order.id,
-            'Date': new Date(order.createdAt).toLocaleDateString(),
-            'Customer': order.user?.name || 'Unknown',
-            'Email': order.user?.email || 'N/A',
-            'Items': order.orderItems?.length || 0,
-            'Total': `₹${order.total}`,
-            'Payment Method': order.paymentMethod,
-            'Status': order.status,
-            'Coupon Used': order.isCouponUsed ? `Yes (${order.coupon?.code})` : 'No'
-        }))
-        
-        const worksheet = XLSX.utils.json_to_sheet(exportData)
-        
-        // Auto-size columns
-        const maxWidth = exportData.reduce((w, r) => Math.max(w, r['Order ID'].length), 10)
-        worksheet['!cols'] = [{ wch: maxWidth }]
-        
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Orders')
-        XLSX.writeFile(workbook, 'Store_Orders.xlsx')
-        toast.success('Orders exported to Excel!')
-        setExportMenuOpen(false)
-    }
-    
+const exportToExcel = () => {
+    const exportData = orders.map(order => ({
+        "Order ID": order.id,
+        "Date": new Date(order.createdAt).toLocaleDateString(),
+        "Customer": order.user?.name || "Unknown",
+        "Email": order.user?.email || "N/A",
+        "Items": order.orderItems?.length || 0,
+        "Total Amount": order.total,
+        "Payment Method": order.paymentMethod || "N/A",
+        "Status": order.status,
+        "Coupon Used": order.isCouponUsed ? order.coupon?.code : "No"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Orders");
+
+    XLSX.writeFile(workbook, "Store_Orders.xlsx");
+    toast.success("Excel downloaded!");
+    setExportMenuOpen(false);
+};
+
     // Export orders to PDF
-    const exportToPDF = () => {
-        const doc = new jsPDF('landscape')
-        
-        // Add header
-        doc.setFontSize(18)
-        doc.setTextColor(40, 60, 120)
-        doc.text('Store Orders Report', 14, 22)
-        
-        doc.setFontSize(11)
-        doc.setTextColor(80, 80, 80)
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30)
-        
-        // Create the table
-        const tableColumn = ["Order ID", "Date", "Customer", "Items", "Total", "Status"]
-        const tableRows = []
-        
-        orders.forEach(order => {
-            const orderData = [
-                order.id.slice(0, 8),
-                new Date(order.createdAt).toLocaleDateString(),
-                order.user?.name || 'Unknown',
-                order.orderItems?.length || 0,
-                `₹${order.total}`,
-                order.status
-            ]
-            tableRows.push(orderData)
-        })
-        
-        doc.autoTable({
-            head: [tableColumn],
-            body: tableRows,
-            startY: 40,
-            theme: 'grid',
-            headStyles: {
-                fillColor: [59, 130, 246],
-                textColor: [255, 255, 255],
-                fontStyle: 'bold',
-            },
-            alternateRowStyles: {
-                fillColor: [240, 248, 255]
-            }
-        })
-        
-        // Save the PDF
-        doc.save('Store_Orders_Report.pdf')
-        toast.success('Orders exported to PDF!')
-        setExportMenuOpen(false)
-    }
+const exportToPDF = () => {
+    const doc = new jsPDF("landscape");
+
+    doc.setFontSize(18);
+    doc.text("Store Orders Report", 14, 15);
+
+    const tableColumn = ["Order ID", "Date", "Customer", "Items", "Total", "Status"];
+    const tableRows = orders.map(order => [
+        order.id.slice(0, 8),
+        new Date(order.createdAt).toLocaleDateString(),
+        order.user?.name || "Unknown",
+        order.orderItems?.length || 0,
+        `₹${order.total}`,
+        order.status
+    ]);
+
+    autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 25,
+        theme: "grid",
+        styles: { fontSize: 10 },
+        headStyles: { fillColor: [59, 130, 246] }
+    });
+
+    doc.save("Store_Orders_Report.pdf");
+    toast.success("PDF downloaded!");
+    setExportMenuOpen(false);
+};
+
     
     // Status badge styles and icons
     const getStatusBadge = (status) => {
@@ -392,7 +331,7 @@ export default function StoreOrders() {
                         <div className="relative">
                             <button 
                                 onClick={() => setExportMenuOpen(!exportMenuOpen)}
-                                className="bg-white border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition shadow-sm flex items-center justify-center"
+                                className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2 rounded-lg text-sm hover:from-blue-700 hover:to-blue-800 transition shadow-sm flex items-center justify-center"
                             >
                                 <Download  size={16} className="mr-2" />
                                 Export
@@ -418,13 +357,13 @@ export default function StoreOrders() {
                             )}
                         </div>
                         
-                        <button 
+                        {/* <button 
                             onClick={fetchOrders}
                             className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-2 rounded-lg text-sm hover:from-blue-700 hover:to-blue-800 transition shadow-sm flex items-center justify-center"
                         >
                             <RefreshCw  size={16} className="mr-2" />
                             Refresh
-                        </button>
+                        </button> */}
                     </div>
                 </div>
 
@@ -706,10 +645,10 @@ export default function StoreOrders() {
 
             {/* Order Detail Modal with Invoice Preview */}
             {isModalOpen && selectedOrder && (
-                <div onClick={closeModal} className="fixed inset-0 flex items-center justify-center bg-black/50 text-slate-700 text-sm backdrop-blur-sm z-50 p-4" >
-                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl max-w-3xl w-full relative overflow-y-auto max-h-[90vh] mx-4">
+                <div onClick={closeModal} className="fixed inset-0 flex items-center justify-center bg-black/50 text-slate-700 text-sm backdrop-blur-sm z-50 p-7" >
+                    <div onClick={e => e.stopPropagation()} className="bg-white rounded-xl shadow-xl max-w-3xl w-full relative overflow-y-auto max-h-[90vh] mx-5">
                         {/* Modal header with gradient */}
-                        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white py-6 px-6 rounded-t-xl">
+                        <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white  pl-3 pr-3 pb-3 pt-11 px-6 rounded-t-xl">
                             <div className="flex items-center justify-between">
                                 <h2 className="text-xl font-bold flex items-center">
                                     <FileText  className="h-5 w-5 mr-2" /> 
@@ -734,7 +673,7 @@ export default function StoreOrders() {
                             </div>
                         </div>
                         
-                        <div className="p-6">
+                        <div className="p-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                                 {/* Customer Details */}
                                 <div className="bg-gradient-to-br from-slate-50 to-white p-5 rounded-xl border border-slate-200">
@@ -923,12 +862,12 @@ export default function StoreOrders() {
                                     </select>
                                 </div>
                                 <div className="flex gap-3">
-                                    <button 
+                                    {/* <button 
                                         onClick={closeModal} 
                                         className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition font-medium"
                                     >
                                         Close
-                                    </button>
+                                    </button> */}
                                     <button 
                                         onClick={handlePrint}
                                         className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition font-medium flex items-center"
