@@ -1,5 +1,4 @@
 'use client'
-import { addToCart } from "@/lib/features/cart/cartSlice";
 import {
   StarIcon,
   TagIcon,
@@ -9,30 +8,25 @@ import {
   HeartIcon,
   ShareIcon,
   CheckIcon,
-  BarChart3Icon,
   ArrowLeftIcon,
   Truck,
   Zap,
   Award,
   RefreshCw,
-  ThumbsUp,
-  Clock
+  ThumbsUp
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Image from "next/image";
-import Counter from "./Counter";
 import { useDispatch, useSelector } from "react-redux";
+import { addToCart } from "@/lib/features/cart/cartSlice";
 import toast from "react-hot-toast";
 
 const ProductDetails = ({ product }) => {
   const productId = product.id;
   const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹';
 
-  // Fixed: Get the items array from state.cart.items
   const cartItems = useSelector(state => state.cart.items || []);
-  
-  // Create helper to check if product is in cart
   const itemInCart = cartItems.find(item => item.id === productId);
   
   const dispatch = useDispatch();
@@ -41,6 +35,10 @@ const ProductDetails = ({ product }) => {
   const [mainImage, setMainImage] = useState(product.images[0]);
   const [isWishlist, setIsWishlist] = useState(false);
   const [imageLoading, setImageLoading] = useState(true);
+  const [quantity, setQuantity] = useState(1);
+  const [isZoomed, setIsZoomed] = useState(false);
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const imageContainerRef = useRef(null);
 
   const averageRating =
     product.rating.length > 0
@@ -51,10 +49,26 @@ const ProductDetails = ({ product }) => {
     ((product.mrp - product.price) / product.mrp) * 100
   );
 
+  // Update quantity if item already in cart
+  useEffect(() => {
+    if (itemInCart) {
+      setQuantity(itemInCart.quantity);
+    }
+  }, [itemInCart]);
+
   const addToCartHandler = () => {
-    if (product.stock <= 0) return;
+    // Create a cart-ready product object with correct quantity
+    const cartProduct = {
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.images?.[0] || '/placeholder.png',
+      quantity: quantity,
+      category: product.category,
+      stock: product.stock
+    };
     
-    dispatch(addToCart({ product }));
+    dispatch(addToCart({ product: cartProduct }));
     toast.success(`${product.name} added to your cart!`, {
       icon: '🛒',
       style: {
@@ -64,13 +78,24 @@ const ProductDetails = ({ product }) => {
       }
     });
   };
-  
+
+  // Handle image zoom functionality
+  const handleImageMouseMove = (e) => {
+    if (!imageContainerRef.current) return;
+    
+    const { left, top, width, height } = imageContainerRef.current.getBoundingClientRect();
+    const x = ((e.clientX - left) / width) * 100;
+    const y = ((e.clientY - top) / height) * 100;
+    
+    setMousePosition({ x, y });
+  };
+
   // Features for product
   const features = [
     { icon: TruckIcon, color: 'blue', title: 'Free Delivery', description: 'For orders above ₹50' },
     { icon: RefreshCw, color: 'green', title: 'Easy Returns', description: '30-day returns policy' },
     { icon: ShieldCheckIcon, color: 'purple', title: 'Secure Payment', description: '100% secure checkout' },
-    { icon: Zap, color: 'amber', title: 'Fast Shipping', description: 'Delivered in 2-3 days' },
+    { icon: Zap, color: 'green', title: 'Fast Shipping', description: 'Delivered in 2-3 days' },
   ];
 
   return (
@@ -98,7 +123,13 @@ const ProductDetails = ({ product }) => {
             ))}
           </div>
 
-          <div className="relative flex justify-center items-center h-100 sm:size-113 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl overflow-hidden group">
+          <div 
+            ref={imageContainerRef}
+            className="relative flex justify-center items-center h-100 sm:size-113 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl overflow-hidden group"
+            onMouseMove={handleImageMouseMove}
+            onMouseEnter={() => setIsZoomed(true)}
+            onMouseLeave={() => setIsZoomed(false)}
+          >
             {/* Image skeleton loader */}
             {imageLoading && (
               <div className="absolute inset-0 bg-gradient-to-r from-slate-100 to-slate-200 animate-pulse">
@@ -106,47 +137,40 @@ const ProductDetails = ({ product }) => {
               </div>
             )}
             
-            {discountPercentage > 0 && (
-              <div className="absolute top-4 left-4 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg z-20 shadow-md flex items-center gap-1.5">
-                <TagIcon size={14} />
-                {discountPercentage}% OFF
+            {isZoomed ? (
+              // Zoomed view
+              <div className="absolute inset-0 overflow-hidden">
+                <Image
+                  src={mainImage}
+                  alt={product.name}
+                  width={1000}
+                  height={1000}
+                  onLoad={() => setImageLoading(false)}
+                  className="object-contain absolute w-[200%] h-[200%] transition-all duration-300"
+                  style={{ 
+                    transformOrigin: 'top left',
+                    transform: `translate(-${mousePosition.x}%, -${mousePosition.y}%) scale(2)` 
+                  }}
+                />
               </div>
+            ) : (
+              // Normal view
+              <Image
+                src={mainImage}
+                alt={product.name}
+                width={500}
+                height={500}
+                onLoad={() => setImageLoading(false)}
+                className={`object-contain p-6 transition-transform duration-500 group-hover:scale-110 ${
+                  imageLoading ? 'opacity-0' : 'opacity-100'
+                }`}
+              />
             )}
             
-            {/* Stock status badge */}
-            <div className={`absolute top-4 right-4 text-xs font-semibold px-3 py-1.5 rounded-lg z-20 flex items-center gap-1.5 ${
-              product.stock > 0 
-                ? 'bg-green-100 text-green-800'
-                : 'bg-red-100 text-red-800'
-            }`}>
-              {product.stock > 0 ? (
-                <>
-                  <span className="size-2 rounded-full bg-green-600"></span>
-                  In Stock ({product.stock})
-                </>
-              ) : (
-                <>
-                  <Clock size={14} />
-                  Out of Stock
-                </>
-              )}
-            </div>
-            
-            <Image
-              src={mainImage}
-              alt={product.name}
-              width={500}
-              height={500}
-              onLoad={() => setImageLoading(false)}
-              className={`object-contain p-6 transition-transform duration-500 group-hover:scale-110 ${
-                imageLoading ? 'opacity-0' : 'opacity-100'
-              }`}
-            />
-            
-            {/* Zoom hint */}
+            {/* Zoom instruction */}
             <div className="absolute bottom-3 left-0 right-0 text-center opacity-0 group-hover:opacity-100 transition-opacity">
               <span className="text-xs text-slate-600 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-full">
-                Hover to zoom
+                Hover to zoom • Click for fullscreen
               </span>
             </div>
           </div>
@@ -202,31 +226,7 @@ const ProductDetails = ({ product }) => {
                 </div>
               )}
             </div>
-            
-            {/* Stock pill directly on the product page */}
-            <div className={`ml-auto px-3 py-1.5 rounded-full text-sm font-medium ${
-              product.stock > 0 
-                ? 'bg-green-50 text-green-700' 
-                : 'bg-red-50 text-red-700'
-            }`}>
-              {product.stock > 0 ? `In Stock (${product.stock})` : 'Out of Stock'}
-            </div>
           </div>
-
-          {/* OFFER BANNER */}
-          {discountPercentage > 0 && (
-            <div className="flex items-start gap-3 bg-gradient-to-r from-amber-50 to-amber-100 px-4 py-3 rounded-xl mb-6 border border-amber-200/50">
-              <Zap size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-amber-800">
-                  Limited time offer — Save {discountPercentage}% today!
-                </p>
-                <p className="text-xs text-amber-700 mt-1">
-                  Hurry! Offer ends soon. Free shipping on this item.
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* DESCRIPTION */}
           <div className="mb-6">
@@ -255,76 +255,50 @@ const ProductDetails = ({ product }) => {
             </div>
           )}
 
-          {/* CART ACTIONS - FIXED SECTION */}
-          <div className="flex flex-wrap items-center gap-4 mt-6">
-            {/* Check if item is in cart using our helper */}
-            {itemInCart ? (
-              <div className="flex flex-col">
-                <p className="text-xs text-slate-600 mb-1">Quantity</p>
-                <Counter productId={productId} />
+          {/* QUANTITY SELECTOR */}
+          <div className="mb-6">
+            <p className="text-sm text-slate-700 mb-2">Quantity</p>
+            <div className="flex items-center w-36 border border-slate-200 rounded-lg overflow-hidden">
+              <button 
+                onClick={() => setQuantity(prev => Math.max(1, prev - 1))}
+                className="w-12 h-12 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                -
+              </button>
+              <div className="flex-1 h-12 flex items-center justify-center font-medium text-slate-800">
+                {quantity}
               </div>
-            ) : (
-              <div className="w-32">
-                <p className="text-xs text-slate-600 mb-1">Quantity</p>
-                <div className="flex items-center justify-between bg-slate-100 rounded-lg p-2">
-                  <span className="px-3 text-sm">1</span>
-                </div>
-              </div>
-            )}
+              <button 
+                onClick={() => setQuantity(prev => prev + 1)}
+                className="w-12 h-12 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                +
+              </button>
+            </div>
+          </div>
 
+          {/* CART ACTIONS */}
+          <div className="flex flex-wrap items-center gap-4 mt-6">
             <button
               onClick={() =>
                 itemInCart
                   ? router.push('/cart')
                   : addToCartHandler()
               }
-              disabled={product.stock <= 0 && !itemInCart}
-              className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium shadow-sm hover:shadow transition-all ${
-                product.stock > 0 || itemInCart
-                  ? itemInCart
-                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                    : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
-                  : 'bg-slate-200 text-slate-500 cursor-not-allowed'
-              }`}
+              className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium shadow-sm hover:shadow transition-all
+                ${itemInCart
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
+                }`}
             >
               <ShoppingCartIcon size={18} />
               {itemInCart ? 'View Cart' : 'Add to Cart'}
             </button>
-          </div>
-          
-          {/* TRUST FEATURES */}
-          <div className="grid grid-cols-2 gap-3 mt-8">
-            {features.map((feature, index) => (
-              <div key={index} className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <div className={`bg-${feature.color}-100 p-2 rounded-full flex-shrink-0`}>
-                  <feature.icon size={16} className={`text-${feature.color}-600`} />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-800">{feature.title}</p>
-                  <p className="text-xs text-slate-500">{feature.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          {/* Trust badges */}
-          <div className="flex flex-wrap items-center justify-between gap-3 mt-8 p-4 bg-slate-50 rounded-xl border border-slate-100">
-            <div className="flex items-center gap-2">
-              <Award size={18} className="text-amber-500" />
-              <span className="text-xs font-medium text-slate-700">Trusted Quality</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <ShieldCheckIcon size={18} className="text-green-600" />
-              <span className="text-xs font-medium text-slate-700">Secure Payment</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Truck size={18} className="text-green-500" />
-              <span className="text-xs font-medium text-slate-700">Free Delivery</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <ThumbsUp size={18} className="text-purple-500" />
-              <span className="text-xs font-medium text-slate-700">24/7 Support</span>
-            </div>
+            
+            {/* Share button */}
+            <button className="px-4 py-3.5 rounded-xl font-medium bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 transition-all">
+              <ShareIcon size={20} />
+            </button>
           </div>
         </div>
       </div>

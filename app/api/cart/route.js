@@ -4,15 +4,15 @@ import { NextResponse } from "next/server";
 
 
 // Update user cart 
-export async function POST(request){
+export async function POST(request) {
     try {
         const { userId } = getAuth(request)
         const { cart } = await request.json()
 
         // Save the cart to the user object
         await prisma.user.update({
-            where: {id: userId},
-            data: {cart: cart}
+            where: { id: userId },
+            data: { cart: cart }
         })
 
         return NextResponse.json({ message: 'Cart updated' })
@@ -23,12 +23,12 @@ export async function POST(request){
 }
 
 // Get user cart 
-export async function GET(request){
+export async function GET(request) {
     try {
         const { userId } = getAuth(request)
-        
+
         const user = await prisma.user.findUnique({
-            where: {id: userId}
+            where: { id: userId }
         })
 
         return NextResponse.json({ cart: user.cart })

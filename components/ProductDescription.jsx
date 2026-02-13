@@ -17,7 +17,7 @@ import {
   AlertCircle,
   CheckCircle,
   Award,
-  Calendar,
+  Calendar,StarIcon ,
   Users
 } from "lucide-react"
 
@@ -576,6 +576,51 @@ const ProductDescription = ({ product }) => {
           )}
         </div>
       )}
+
+
+              {/* Store Page */}
+              <div className="flex flex-col sm:flex-row gap-4 mt-14 bg-gradient-to-r from-slate-50 to-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <Image 
+                    src={product.store.logo} 
+                    alt={product.store.name} 
+                    className="size-16 sm:size-20 rounded-full ring-4 ring-white shadow-md object-cover mx-auto sm:mx-0" 
+                    width={100} 
+                    height={100} 
+                />
+                <div className="flex-1 text-center sm:text-left">
+                    <h3 className="font-bold text-lg text-slate-800">Product by {product.store.name}</h3>
+                    <div className="flex items-center gap-2 mt-1 justify-center sm:justify-start">
+                        <div className="flex">
+                            {[1, 2, 3, 4, 5].map((_, i) => (
+                                <StarIcon 
+                                    key={i} 
+                                    size={16} 
+                                    className='text-yellow-400' 
+                                    fill="#FBBF24"
+                                    strokeWidth={0} 
+                                />
+                            ))}
+                        </div>
+                        <span className="text-sm text-slate-600">98% Positive Ratings</span>
+                    </div>
+                    <p className="text-sm text-slate-600 my-2">Official Store • {product.store.productsCount || '100+'}  Products • Since {product.store.establishedYear || '2020'}</p>
+                    <div className="flex flex-col sm:flex-row gap-3 mt-3 justify-center sm:justify-start">
+                        <Link 
+                            href={`/shop/${product.store.username}`} 
+                            className="inline-flex items-center justify-center gap-1.5 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors group font-medium"
+                        >
+                            Visit Store <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                        </Link>
+                        {/* <Link 
+                            href={`/chat/${product.store.username}`} 
+                            className="inline-flex items-center justify-center gap-1.5 bg-white text-slate-700 border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors font-medium"
+                        >
+                            <MessageCircle size={16} /> Contact Seller
+                        </Link> */}
+                    </div>
+                </div>
+              </div>
+      
     </div>
   )
 }

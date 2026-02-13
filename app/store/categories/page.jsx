@@ -39,8 +39,8 @@ import {
 
 export default function ProductCategoryManagement() {
     const [productCategories, setProductCategories] = useState([
-      { id: 1, name: "Electronics", description: "Smartphones, Laptops, Tablets, and more", image: "/images/electronics.jpg", productCount: 42 },
-      { id: 2, name: "Fashion", description: "Clothing, Shoes, Accessories, and more", image: "/images/fashion.jpg", productCount: 128 },
+      { id: 1, name: "Electronics", description: "Smartphones, Laptops, Tablets, and more", image: "/images/electronics.jpg" },
+      { id: 2, name: "Fashion", description: "Clothing, Shoes, Accessories, and more", image: "/images/fashion.jpg"  },
       
     ])
     const [showAddForm, setShowAddForm] = useState(false)
@@ -263,9 +263,9 @@ export default function ProductCategoryManagement() {
                 </button>
               </div>
               
-              <button className="p-2.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 transition-colors">
+              {/* <button className="p-2.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 transition-colors">
                 <Filter size={18} />
-              </button>
+              </button> */}
             </div>
           </div>
           
@@ -281,11 +281,11 @@ export default function ProductCategoryManagement() {
                         fill
                         className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent"></div>
+                      {/* <div className="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent"></div>
                       <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 flex items-center">
                         <Package size={12} className="mr-1 text-green-500" />
                         {category.productCount} Products
-                      </div>
+                      </div> */}
                     </div>
                     
                     <div className="p-4">
@@ -331,7 +331,7 @@ export default function ProductCategoryManagement() {
                     <th className="px-6 py-4">Image</th>
                     <th className="px-6 py-4">Name</th>
                     <th className="px-6 py-4 hidden md:table-cell">Description</th>
-                    <th className="px-6 py-4 text-center">Products</th>
+                    {/* <th className="px-6 py-4 text-center">Products</th> */}
                     <th className="px-6 py-4 text-center">Actions</th>
                   </tr>
                 </thead>

@@ -19,6 +19,13 @@ const WishlistPage = () => {
     const [showConfirmation, setShowConfirmation] = useState(false);
     const [productToRemove, setProductToRemove] = useState(null);
     const [isMovingToCart, setIsMovingToCart] = useState(false);
+    const [showClearConfirmation, setShowClearConfirmation] = useState(false);
+    const [selectedItems, setSelectedItems] = useState([]);
+    
+    // Initialize selectedItems with all wishlist items
+    useEffect(() => {
+        setSelectedItems(wishlistItems.map(item => item.id));
+    }, [wishlistItems]);
     
     const confirmRemoveFromWishlist = (product) => {
         setProductToRemove(product);
@@ -40,6 +47,22 @@ const WishlistPage = () => {
             }
         });
     };
+
+    const handleSelectItem = (productId) => {
+        if (selectedItems.includes(productId)) {
+            setSelectedItems(selectedItems.filter(id => id !== productId));
+        } else {
+            setSelectedItems([...selectedItems, productId]);
+        }
+    };
+
+    const handleSelectAll = () => {
+        if (selectedItems.length === wishlistItems.length) {
+            setSelectedItems([]);
+        } else {
+            setSelectedItems(wishlistItems.map(item => item.id));
+        }
+    };
     
     const addToCartHandler = (product) => {
         setIsMovingToCart(true);
@@ -52,7 +75,7 @@ const WishlistPage = () => {
             image: product.image,
             quantity: 1,
             category: product.category,
-            stock: product.inStock ? 10 : 0
+            stock: 10 // All products are in stock
         };
         
         // Add to cart with a small delay to show animation effect
@@ -70,6 +93,23 @@ const WishlistPage = () => {
             
             setIsMovingToCart(false);
         }, 300);
+    };
+
+    const addSelectedToCart = () => {
+        const selectedProducts = wishlistItems.filter(item => selectedItems.includes(item.id));
+        
+        selectedProducts.forEach(product => {
+            addToCartHandler(product);
+        });
+
+        toast.success(`${selectedProducts.length} items added to cart`, {
+            icon: '🛒',
+            style: {
+                borderRadius: '10px',
+                background: '#333',
+                color: '#fff',
+            }
+        });
     };
     
     if (wishlistItems.length === 0) {
@@ -95,7 +135,7 @@ const WishlistPage = () => {
 
     return (
         <>
-            {/* Confirmation Dialog */}
+            {/* Confirmation Dialog for removing individual item */}
             <AnimatePresence>
                 {showConfirmation && (
                     <motion.div 
@@ -145,7 +185,7 @@ const WishlistPage = () => {
                                         </div>
                                         <div>
                                             <h4 className="font-medium text-slate-800">{productToRemove.name}</h4>
-                                            <p className="text-sm text-slate-500">${productToRemove.price.toFixed(2)}</p>
+                                            <p className="text-sm text-slate-500">₹{productToRemove.price.toFixed(2)}</p>
                                         </div>
                                     </div>
                                     
@@ -174,6 +214,73 @@ const WishlistPage = () => {
                 )}
             </AnimatePresence>
 
+            {/* Confirmation Dialog for clearing wishlist */}
+            <AnimatePresence>
+                {showClearConfirmation && (
+                    <motion.div 
+                        className="fixed inset-0 flex items-center justify-center z-50 bg-black/60 p-4"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    >
+                        <motion.div 
+                            className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden"
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                        >
+                            <div className="p-5 bg-slate-50 border-b border-slate-200 flex items-start justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-red-100 text-red-600 rounded-full">
+                                        <AlertTriangle size={20} />
+                                    </div>
+                                    <h3 className="text-lg font-semibold text-slate-800">Clear Wishlist</h3>
+                                </div>
+                                <button 
+                                    className="text-slate-400 hover:text-slate-600"
+                                    onClick={() => setShowClearConfirmation(false)}
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            
+                            <div className="p-5">
+                                <p className="text-slate-600 mb-4">
+                                    Are you sure you want to clear all items from your wishlist? This action cannot be undone.
+                                </p>
+                                
+                                <div className="flex gap-3">
+                                    <button 
+                                        className="flex-1 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-lg font-medium hover:bg-slate-50"
+                                        onClick={() => setShowClearConfirmation(false)}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        className="flex-1 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 flex items-center justify-center gap-2"
+                                        onClick={() => {
+                                            dispatch(clearWishlist());
+                                            setShowClearConfirmation(false);
+                                            toast.success('Wishlist cleared', {
+                                                icon: '🗑️',
+                                                style: {
+                                                    borderRadius: '10px',
+                                                    background: '#333',
+                                                    color: '#fff',
+                                                }
+                                            });
+                                        }}
+                                    >
+                                        <Trash2 size={16} />
+                                        Clear All
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
                     <div>
@@ -193,11 +300,43 @@ const WishlistPage = () => {
                 </div>
                 
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="hidden md:grid grid-cols-12 gap-4 p-6 border-b border-slate-100 text-sm font-medium text-slate-600 bg-slate-50">
+                    <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+                        <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input 
+                                    type="checkbox" 
+                                    className="rounded text-green-600 focus:ring-green-500 h-5 w-5"
+                                    checked={selectedItems.length === wishlistItems.length && wishlistItems.length > 0}
+                                    onChange={handleSelectAll}
+                                />
+                                <span className="text-sm font-medium text-slate-700">
+                                    {selectedItems.length === wishlistItems.length && wishlistItems.length > 0 
+                                        ? "Deselect All" 
+                                        : "Select All"}
+                                </span>
+                            </label>
+                            {selectedItems.length > 0 && (
+                                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                                    {selectedItems.length} selected
+                                </span>
+                            )}
+                        </div>
+                        {selectedItems.length > 0 && (
+                            <button 
+                                className="bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg text-sm font-medium flex items-center gap-2"
+                                onClick={addSelectedToCart}
+                            >
+                                <ShoppingCart size={16} />
+                                Add Selected to Cart
+                            </button>
+                        )}
+                    </div>
+                    
+                    <div className="hidden md:grid grid-cols-10 gap-4 p-6 border-b border-slate-100 text-sm font-medium text-slate-600 bg-slate-50">
+                        <div className="col-span-1"></div>
                         <div className="col-span-6">Product</div>
                         <div className="col-span-2 text-center">Price</div>
-                        <div className="col-span-2 text-center">Availability</div>
-                        <div className="col-span-2 text-right">Actions</div>
+                        <div className="col-span-1 text-right">Actions</div>
                     </div>
                     
                     <div className="divide-y divide-slate-100">
@@ -210,8 +349,18 @@ const WishlistPage = () => {
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
                                     transition={{ duration: 0.3 }}
-                                    className="grid grid-cols-1 md:grid-cols-12 gap-4 p-6 items-center"
+                                    className="grid grid-cols-1 md:grid-cols-10 gap-4 p-6 items-center"
                                 >
+                                    {/* Checkbox for selection */}
+                                    <div className="col-span-1 flex justify-start">
+                                        <input 
+                                            type="checkbox" 
+                                            className="rounded text-green-600 focus:ring-green-500 h-5 w-5"
+                                            checked={selectedItems.includes(item.id)}
+                                            onChange={() => handleSelectItem(item.id)}
+                                        />
+                                    </div>
+                                
                                     {/* Product details */}
                                     <div className="col-span-6 flex gap-4 items-center">
                                         <Link 
@@ -250,46 +399,16 @@ const WishlistPage = () => {
                                     {/* Price */}
                                     <div className="col-span-2 text-center md:text-center order-1 md:order-none">
                                         <span className="md:hidden text-sm text-slate-500 mr-2">Price: </span>
-                                        <span className="font-medium text-slate-800">${item.price.toFixed(2)}</span>
-                                    </div>
-                                    
-                                    {/* Stock status */}
-                                    <div className="col-span-2 text-center md:text-center order-2 md:order-none">
-                                        <span className="md:hidden text-sm text-slate-500 mr-2">Status: </span>
-                                        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium ${
-                                            item.inStock 
-                                                ? 'bg-green-100 text-green-800' 
-                                                : 'bg-red-100 text-red-800'
-                                        }`}>
-                                            {item.inStock ? (
-                                                <>
-                                                    <CheckCircle size={12} />
-                                                    In Stock
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Clock size={12} />
-                                                    Out of Stock
-                                                </>
-                                            )}
-                                        </span>
+                                        <span className="font-medium text-slate-800">₹{item.price.toFixed(2)}</span>
                                     </div>
                                     
                                     {/* Actions */}
-                                    <div className="col-span-2 flex justify-end gap-3 order-3 md:order-none">
+                                    <div className="col-span-1 flex justify-end gap-3 order-3 md:order-none">
                                         <button 
                                             onClick={() => addToCartHandler(item)}
-                                            disabled={!item.inStock || isMovingToCart}
-                                            className={`p-2 rounded-lg ${
-                                                item.inStock 
-                                                    ? 'bg-green-600 text-white hover:bg-green-700' 
-                                                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                            } transition-colors flex items-center gap-2 ${isMovingToCart ? 'animate-pulse' : ''}`}
+                                            className="p-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors flex items-center gap-2"
                                         >
                                             <ShoppingCart size={16} />
-                                            <span className="text-sm font-medium hidden sm:inline">
-                                                {isMovingToCart ? 'Adding...' : 'Add to Cart'}
-                                            </span>
                                         </button>
                                         <button 
                                             onClick={() => confirmRemoveFromWishlist(item)}
@@ -305,55 +424,35 @@ const WishlistPage = () => {
                     </div>
                 </div>
                 
-                {/* Clear All Button */}
-                {wishlistItems.length > 0 && (
-                    <div className="mt-6 flex justify-end">
-                        <button 
-                            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-lg transition-colors"
-                            onClick={() => {
-                                if (confirm('Are you sure you want to clear all items from your wishlist?')) {
-                                    dispatch(clearWishlist());
-                                    toast.success('Wishlist cleared', {
-                                        icon: '🗑️',
-                                    });
+                {/* Buttons for bulk actions */}
+                <div className="mt-6 flex justify-between items-center flex-wrap gap-4">
+                    <button 
+                        className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-6 rounded-lg transition-all shadow-sm hover:shadow"
+                        onClick={() => {
+                            wishlistItems.forEach(item => addToCartHandler(item));
+                            
+                            toast.success(`${wishlistItems.length} items added to cart`, {
+                                icon: '🛒',
+                                style: {
+                                    borderRadius: '10px',
+                                    background: '#333',
+                                    color: '#fff',
                                 }
-                            }}
-                        >
-                            <Trash2 size={16} />
-                            Clear Wishlist
-                        </button>
-                    </div>
-                )}
-                
-                {/* Add to cart all */}
-                {wishlistItems.length > 0 && wishlistItems.some(item => item.inStock) && (
-                    <div className="mt-6 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                            <ShoppingBag size={20} className="text-green-500" />
-                            Add all available items to cart
-                        </h3>
-                        
-                        <div className="flex items-center justify-between">
-                            <p className="text-slate-600">
-                                {wishlistItems.filter(item => item.inStock).length} of {wishlistItems.length} items are available
-                            </p>
-                            <button 
-                                className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
-                                onClick={() => {
-                                    const availableItems = wishlistItems.filter(item => item.inStock);
-                                    availableItems.forEach(item => addToCartHandler(item));
-                                    
-                                    toast.success(`${availableItems.length} items added to cart`, {
-                                        icon: '🛒',
-                                    });
-                                }}
-                            >
-                                <ShoppingCart size={18} />
-                                Add All to Cart
-                            </button>
-                        </div>
-                    </div>
-                )}
+                            });
+                        }}
+                    >
+                        <ShoppingCart size={18} />
+                        Add All to Cart
+                    </button>
+                    
+                    <button 
+                        className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2.5 px-6 rounded-lg transition-colors"
+                        onClick={() => setShowClearConfirmation(true)}
+                    >
+                        <Trash2 size={18} />
+                        Clear Wishlist
+                    </button>
+                </div>
                 
                 {/* Recently Viewed / Recommendations */}
                 <div className="mt-12">
@@ -362,9 +461,9 @@ const WishlistPage = () => {
                         More products you might like
                     </h2>
                     
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                         {/* Placeholder for recommended products - would typically come from an API */}
-                        {[1, 2, 3, 4, 5].map((item) => (
+                        {[1, 2, 3, 4].map((item) => (
                             <div key={item} className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
                                 <div className="aspect-square bg-slate-100 relative">
                                     <div className="absolute inset-0 flex items-center justify-center text-slate-400">

@@ -112,13 +112,13 @@ export default function StoreAddProduct() {
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-2xl flex items-center gap-2">
                     <PlusCircle className="text-green-500" size={24} />
-                    Add New <span className="text-slate-800 font-medium bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">Products</span>
+                     <span className="text-slate-800 font-medium bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent"> Add New Products</span>
                 </h1>
                 
-                <div className={`text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 ${aiUsed ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-slate-100 text-slate-600'}`}>
+                {/* <div className={`text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 ${aiUsed ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-slate-100 text-slate-600'}`}>
                     {aiUsed ? <Sparkles size={12} className="text-green-500" /> : <Cpu size={12} />}
                     {aiUsed ? 'AI Assisted' : 'AI Ready'}
-                </div>
+                </div> */}
             </div>
 
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm mb-6">

@@ -31,7 +31,7 @@ function ShopContent() {
     const products = useSelector(state => state.product.list)
     const [selectedCategory, setSelectedCategory] = useState('All')
     const [priceRange, setPriceRange] = useState([0, 1000])
-    const [showFilters, setShowFilters] = useState(false)
+    const [showFilters, setShowFilters] = useState(true) // Changed to true to show filters by default
     const [sortBy, setSortBy] = useState('featured')
 
     // Get unique categories from products
@@ -42,8 +42,11 @@ function ShopContent() {
     const maxPrice = Math.max(...products.map(p => p.price), 1000)
     
     useEffect(() => {
-        setPriceRange([minPrice, maxPrice])
-    }, [products])
+        // Set initial price range to min and max prices from products
+        if (products.length > 0) {
+            setPriceRange([minPrice || 1, maxPrice]);
+        }
+    }, [products, minPrice, maxPrice]);
 
     // Filter products based on search, category, and price
     const filteredProducts = products.filter(product => {
@@ -81,7 +84,7 @@ function ShopContent() {
     // Reset all filters function
     const resetFilters = () => {
         setSelectedCategory('All')
-        setPriceRange([minPrice, maxPrice])
+        setPriceRange([minPrice || 1, maxPrice])
         setSortBy('featured')
         if (search) {
             router.push('/shop')
@@ -238,9 +241,12 @@ function ShopContent() {
                                         <input 
                                             type="number" 
                                             value={priceRange[0]}
-                                            onChange={(e) => setPriceRange([Number(e.target.value), priceRange[1]])}
+                                            onChange={(e) => setPriceRange([
+                                                Number(e.target.value) || 1, // Use 1 as minimum if value is falsy
+                                                priceRange[1]
+                                            ])}
                                             className="w-full p-2.5 border border-slate-200 rounded-lg text-sm shadow-sm focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
-                                            min={minPrice}
+                                            min={1}
                                             max={priceRange[1]}
                                         />
                                         <span className="absolute left-2.5 top-2.5 text-xs text-slate-500"></span>
@@ -250,7 +256,10 @@ function ShopContent() {
                                         <input 
                                             type="number" 
                                             value={priceRange[1]}
-                                            onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])}
+                                            onChange={(e) => setPriceRange([
+                                                priceRange[0],
+                                                Number(e.target.value) || maxPrice
+                                            ])}
                                             className="w-full p-2.5 border border-slate-200 rounded-lg text-sm shadow-sm focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
                                             min={priceRange[0]}
                                             max={maxPrice}
@@ -261,14 +270,14 @@ function ShopContent() {
                                 <div className="px-1">
                                     <input 
                                         type="range" 
-                                        min={minPrice} 
+                                        min={minPrice || 1} 
                                         max={maxPrice}
                                         value={priceRange[1]}
                                         onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])}
                                         className="w-full accent-emerald-600 h-2 bg-slate-200 rounded-full appearance-none cursor-pointer"
                                     />
                                     <div className="flex justify-between text-xs text-slate-500 mt-2">
-                                        <span>₹{minPrice}</span>
+                                        <span>₹{minPrice || 1}</span>
                                         <span>₹{maxPrice}</span>
                                     </div>
                                 </div>
@@ -308,37 +317,6 @@ function ShopContent() {
                                     Reset
                                 </button>
                             </div>
-                            
-                            {/* Active filters summary */}
-                            {/* {(selectedCategory !== 'All' || priceRange[0] > minPrice || priceRange[1] < maxPrice) && (
-                                <div className="mt-6 pt-5 border-t border-slate-100">
-                                    <h4 className="text-xs font-medium text-slate-500 mb-2">ACTIVE FILTERS:</h4>
-                                    <div className="flex flex-wrap gap-2">
-                                        {selectedCategory !== 'All' && (
-                                            <div className="bg-emerald-50 text-xs text-emerald-700 px-2 py-1 rounded-full flex items-center gap-1.5 border border-emerald-100">
-                                                {selectedCategory}
-                                                <button 
-                                                    onClick={() => setSelectedCategory('All')} 
-                                                    className="ml-1 text-emerald-500 hover:text-emerald-700"
-                                                >
-                                                    <X size={12} />
-                                                </button>
-                                            </div>
-                                        )}
-                                        {(priceRange[0] > minPrice || priceRange[1] < maxPrice) && (
-                                            <div className="bg-amber-50 text-xs text-amber-700 px-2 py-1 rounded-full flex items-center gap-1.5 border border-amber-100">
-                                                ₹{priceRange[0]} - ₹{priceRange[1]}
-                                                <button 
-                                                    onClick={() => setPriceRange([minPrice, maxPrice])} 
-                                                    className="ml-1 text-amber-500 hover:text-amber-700"
-                                                >
-                                                    <X size={12} />
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )} */}
                         </div>
                     )}
                     
@@ -348,10 +326,6 @@ function ShopContent() {
                             <>
                                 <div className="flex justify-between items-center mb-4">
                                     <div className="flex items-center gap-2">
-                                        {/* <span className="hidden sm:flex items-center gap-1 bg-white border border-slate-200 text-slate-600 text-xs px-3 py-1.5 rounded-full shadow-sm">
-                                            <LayoutGrid size={14} className="text-emerald-600" />
-                                            <span className="hidden sm:inline">View:</span> {showFilters ? '3 columns' : '4 columns'}
-                                        </span> */}
                                         <span className="bg-white border border-slate-200 text-slate-600 text-xs px-3 py-1.5 rounded-full shadow-sm">
                                             Showing <span className="font-medium text-emerald-600">{sortedProducts.length}</span> products
                                         </span>

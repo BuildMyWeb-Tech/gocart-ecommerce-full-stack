@@ -1,18 +1,18 @@
 'use client'
 import { 
-    StarIcon, Eye, Clock, Tag, CheckCircle, BadgePercent, Zap, 
+    StarIcon, Eye, Tag, CheckCircle, BadgePercent, Zap, 
     Sparkles, ShoppingCart, Heart, ExternalLink, Shield, Truck, Package, Award
 } from 'lucide-react'
 import Image from 'next/image'
-import Link from 'next/link'
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { addToCart, removeFromCart } from '@/lib/features/cart/cartSlice'
 import { addToWishlist, removeFromWishlist } from '@/lib/features/wishlist/wishlistSlice'
 import toast from 'react-hot-toast'
+import { useRouter } from 'next/navigation'
 
 const ProductCard = ({ product, badgeText, badgeIcon }) => {
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹'
+    const router = useRouter();
     const [imageLoaded, setImageLoaded] = useState(false);
     const [isHovering, setIsHovering] = useState(false);
     const [isActionInProgress, setIsActionInProgress] = useState(false);
@@ -80,18 +80,6 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             
             dispatch(addToCart({ product: cartProduct }));
             
-            // Save cart to localStorage
-            setTimeout(() => {
-                const state = JSON.stringify({
-                    cart: {
-                        items: cartItems.concat([cartProduct]),
-                        totalPrice: cartItems.reduce((total, item) => total + item.price * item.quantity, 0) + product.price,
-                        total: cartItems.length + 1
-                    }
-                });
-                localStorage.setItem('redux-state', state);
-            }, 100);
-            
             toast.success(`${product.name} added to cart!`, {
                 icon: '🛒',
                 style: {
@@ -144,11 +132,17 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
         }
     };
 
+    // Handle click on the product card
+    const handleProductClick = (e) => {
+        router.push(`/product/${product.id}`);
+    };
+
     return (
         <div 
-            className='group max-xl:mx-auto relative block transform transition-all duration-300 hover:-translate-y-1.5 w-full'
+            className='group max-xl:mx-auto relative block transform transition-all duration-300 hover:-translate-y-1.5 w-full cursor-pointer'
             onMouseEnter={() => setIsHovering(true)}
             onMouseLeave={() => setIsHovering(false)}
+            onClick={handleProductClick}
         >
             {/* Product Card Container */}
             <div className='rounded-xl overflow-hidden bg-white border border-slate-200 hover:border-slate-300 shadow-sm hover:shadow-md transition-all duration-300 h-full flex flex-col'>
@@ -208,14 +202,6 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                         </div>
                     )}
                     
-                    {/* OUT OF STOCK Badge - Positioned in top right corner */}
-                    {product.stock <= 0 && (
-                        <div className="absolute top-3 right-3 bg-gradient-to-r from-red-500 to-rose-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full z-30 flex items-center gap-1.5 shadow-md">
-                            <Clock size={12} />
-                            OUT OF STOCK
-                        </div>
-                    )}
-                    
                     {/* Wishlist button */}
                     <button 
                         className={`absolute top-3 right-3 z-30 p-2 rounded-full shadow-md transition-all duration-300 ${
@@ -230,29 +216,28 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                     </button>
                     
                     {/* Quick action overlay - now with lower opacity and no blur for better product visibility */}
-                    <div className={`absolute inset-0 bg-slate-900/30 flex items-center justify-center z-20 
-                        opacity-0 group-hover:opacity-100 transition-opacity duration-200 
-                        ${product.stock <= 0 ? 'pointer-events-none' : ''}`}>
-                        {product.stock > 0 && (
-                            <div className="flex flex-col gap-3">
-                                <Link 
-                                    href={`/product/${product.id}`}
-                                    className="bg-white text-slate-800 hover:text-green-600 hover:bg-green-50 font-medium px-2 py-1.5 rounded-lg shadow-md transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <ExternalLink size={16} />
-                                    View Details
-                                </Link>
-                                <button 
-                                    onClick={handleCartAction}
-                                    className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-md transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
-                                >
-                                    <ShoppingCart size={18} /> 
-                                    {isInCart ? 'Added to Cart' : 'Add to Cart'}
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                    {/* <div className={`absolute inset-0 bg-slate-900/30 flex items-center justify-center z-20 
+                        opacity-0 group-hover:opacity-100 transition-opacity duration-200`}>
+                        <div className="flex flex-col gap-3">
+                            <button 
+                                className="bg-white text-slate-800 hover:text-green-600 hover:bg-green-50 font-medium px-2 py-1.5 rounded-lg shadow-md transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    router.push(`/product/${product.id}`);
+                                }}
+                            >
+                                <ExternalLink size={16} />
+                                View Details
+                            </button>
+                            <button 
+                                onClick={handleCartAction}
+                                className="bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-medium px-5 py-2.5 rounded-lg shadow-md transform hover:scale-105 transition-all duration-200 flex items-center justify-center gap-2"
+                            >
+                                <ShoppingCart size={18} /> 
+                                {isInCart ? 'Added to Cart' : 'Add to Cart'}
+                            </button>
+                        </div>
+                    </div> */}
 
                     {/* Category pill - Positioned in bottom left corner with improved styling */}
                     <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-xs text-slate-700 px-2.5 py-1 rounded-full z-20 opacity-90 hover:opacity-100 transition-opacity border border-slate-200/50 shadow-sm flex items-center gap-1.5">
@@ -264,12 +249,12 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                 {/* Product Information */}
                 <div className='p-3.5 sm:p-5 flex-1 flex flex-col'>
                     {/* Product Name with animation on hover */}
-                    <Link href={`/product/${product.id}`} className="group/title">
+                    <div>
                         <h3 className="font-medium text-sm sm:text-base text-slate-800 line-clamp-2 min-h-[2.5rem] mb-2 leading-snug group-hover:text-green-700 transition-colors">
                             {product.name}
-                            <span className="block w-0 group-hover/title:w-full h-0.5 bg-green-500 mt-0.5 transition-all duration-300 opacity-0 group-hover/title:opacity-100"></span>
+                            <span className="block w-0 group-hover:w-full h-0.5 bg-green-500 mt-0.5 transition-all duration-300 opacity-0 group-hover:opacity-100"></span>
                         </h3>
-                    </Link>
+                    </div>
                     
                     {/* Product Short Description with icon */}
                     {product.shortDescription && (
@@ -293,13 +278,13 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
 
                     {/* Product Price with updated styling */}
                     <div className="flex items-center gap-2 mt-1 mb-2 bg-slate-50 p-2 rounded-md">
-                        <p className="font-bold text-base sm:text-lg text-slate-900">{currency}{product.price}</p>
+                        <p className="font-bold text-base sm:text-lg text-slate-900">₹ {product.price}</p>
                         {product.mrp && product.price < product.mrp && (
-                            <p className="text-xs text-slate-500 line-through">{currency}{product.mrp}</p>
+                            <p className="text-xs text-slate-500 line-through">₹ {product.mrp}</p>
                         )}
                         {discountPercentage > 0 && (
                             <p className="text-xs text-white font-medium ml-auto bg-green-500 px-2 py-0.5 rounded">
-                                SAVE {currency}{(product.mrp - product.price).toFixed(0)}
+                                SAVE ₹ {(product.mrp - product.price).toFixed(0)}
                             </p>
                         )}
                     </div>
@@ -323,19 +308,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
                             </span>
                         </div>
                         
-                        {/* Stock indicator dot */}
-                        <div className={`flex items-center gap-1.5 text-xs font-medium ${
-                            product.stock > 0 
-                                ? 'text-green-600' 
-                                : 'text-red-600'
-                        }`}>
-                            <span className={`h-2 w-2 rounded-full ${
-                                product.stock > 0 ? 'bg-green-500' : 'bg-red-500'
-                            }`}></span>
-                            {product.stock > 0 
-                                ? product.stock > 10 ? 'In Stock' : `Only ${product.stock} left` 
-                                : 'Out of Stock'}
-                        </div>
+                        
                     </div>
 
                     {/* Promo Text with improved visibility */}
@@ -348,30 +321,25 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
 
                     {/* Add to Cart and View Details buttons for non-hover state (mobile-friendly) */}
                     <div className="flex flex-col sm:flex-row gap-1 mt-4">
-                        <Link 
-                            href={`/product/${product.id}`}
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/product/${product.id}`);
+                            }}
                             className="flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-md transition-all duration-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium border border-slate-200 hover:border-slate-300"
                         >
                             <ExternalLink size={16} />
                             View Details
-                        </Link>
+                        </button>
                         <button 
                             onClick={handleCartAction}
-                            disabled={product.stock <= 0}
                             className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-md transition-all duration-200 text-sm font-medium ${
-                                product.stock <= 0 
-                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                                    : isInCart
-                                        ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 hover:border-red-300'
-                                        : 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white shadow-sm hover:shadow border border-transparent'
+                                isInCart
+                                    ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 hover:border-red-300'
+                                    : 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white shadow-sm hover:shadow border border-transparent'
                             } ${isActionInProgress ? 'scale-95' : ''}`}
                         >
-                            {product.stock <= 0 ? (
-                                <>
-                                    <Clock size={16} />
-                                    Out of Stock
-                                </>
-                            ) : isInCart ? (
+                            {isInCart ? (
                                 <>
                                     <CheckCircle size={16} className="text-red-500" />                                    
                                     Added to Cart

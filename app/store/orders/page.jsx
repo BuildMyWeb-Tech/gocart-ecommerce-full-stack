@@ -862,12 +862,12 @@ const exportToPDF = () => {
                                     </select>
                                 </div>
                                 <div className="flex gap-3">
-                                    {/* <button 
+                                    <button 
                                         onClick={closeModal} 
                                         className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition font-medium"
                                     >
                                         Close
-                                    </button> */}
+                                    </button>
                                     <button 
                                         onClick={handlePrint}
                                         className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition font-medium flex items-center"
