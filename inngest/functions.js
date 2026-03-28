@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\inngest\functions.js
 import {inngest} from './client'
 import prisma from '@/lib/prisma'
 

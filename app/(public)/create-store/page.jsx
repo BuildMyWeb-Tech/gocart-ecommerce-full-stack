@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\(public)\create-store\page.jsx
 'use client'
 import { assets } from "@/assets/assets"
 import { useEffect, useState } from "react"

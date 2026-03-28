@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\ProductCategories.jsx
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
 import Title from './Title'

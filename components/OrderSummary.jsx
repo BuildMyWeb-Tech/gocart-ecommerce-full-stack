@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\OrderSummary.jsx
 import { PlusIcon, SquarePenIcon, XIcon, CheckCircleIcon, ClockIcon, ShieldCheckIcon, CreditCardIcon, TrendingDown } from 'lucide-react';
 import React, { useState } from 'react'
 import AddressModal from './AddressModal';

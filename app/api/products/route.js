@@ -1,31 +1,65 @@
-// C: \Users\ Siddharathan\ Desktop\ gocart - ecommerce - full - stack\ app\ api\ products\ route.js
-import prisma from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import prisma from '@/lib/prisma';
+import { NextResponse } from 'next/server';
 
-
+// ── GET: All active products for public users ─────────────────────────────────
+// Query params:
+//   ?category=Electronics  → filter by category (array field)
+//   ?search=phone          → search by name or description
+//   ?storeId=xxx           → filter by store
 export async function GET(request) {
-    try {
-        let products = await prisma.product.findMany({
-            where: { inStock: true },
-            include: {
-                rating: {
-                    select: {
-                        createdAt: true,
-                        rating: true,
-                        review: true,
-                        user: { select: { name: true, image: true } }
-                    }
-                },
-                store: true,
-            },
-            orderBy: { createdAt: 'desc' }
-        })
+  try {
+    const { searchParams } = new URL(request.url);
+    const category = searchParams.get('category');
+    const search = searchParams.get('search');
+    const storeId = searchParams.get('storeId');
 
-        // remove products with store isActive false
-        products = products.filter(product => product.store.isActive)
-        return NextResponse.json({ products })
-    } catch (error) {
-        console.error(error);
-        return NextResponse.json({ error: "An internal server error occurred." }, { status: 500 });
+    const where = {
+      inStock: true, // Only show active/in-stock products to users
+    };
+
+    if (category) {
+      // category is a String[] field — filter products that contain this category
+      where.category = { has: category };
     }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (storeId) {
+      where.storeId = storeId;
+    }
+
+    const products = await prisma.product.findMany({
+      where,
+      include: {
+        rating: {
+          select: {
+            id: true,
+            rating: true,
+            review: true,
+            userId: true,
+            createdAt: true,
+          },
+        },
+        store: {
+          select: {
+            name: true,
+            username: true,
+            logo: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // keyFeatures is already a String[] column — returned as-is from Prisma
+    return NextResponse.json({ products });
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
 }
