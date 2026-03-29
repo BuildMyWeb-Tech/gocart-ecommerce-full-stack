@@ -1,4 +1,4 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\store\add-product\page.jsx
+// app/admin/add-product/page.jsx
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -21,9 +21,10 @@ import {
   Zap,
   Plus,
   Trash2,
+  Globe,
 } from 'lucide-react';
 
-export default function AddProductPage() {
+export default function AdminAddProductPage() {
   const { getToken } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -38,8 +39,6 @@ export default function AddProductPage() {
   const [imagePreviews, setImagePreviews] = useState([]);
   const [imageFiles, setImageFiles] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
-
-  // Key features: array of strings, start with one empty field
   const [keyFeatures, setKeyFeatures] = useState(['']);
 
   const [productInfo, setProductInfo] = useState({
@@ -51,8 +50,7 @@ export default function AddProductPage() {
     selectedCategories: [],
   });
 
-  // ── Fetch categories ──────────────────────────────────────────────
-  // ── Fetch categories (with auth so store gets global + their own) ─
+  // ── Fetch ALL categories (admin + store) ──────────────────────
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -70,20 +68,21 @@ export default function AddProductPage() {
     fetchCategories();
   }, []);
 
-  // ── Fetch product for edit mode ───────────────────────────────────
+  // ── Fetch product for edit mode ───────────────────────────────
   useEffect(() => {
     if (!isEditMode) return;
     const fetchProduct = async () => {
       try {
         setPageLoading(true);
         const token = await getToken();
-        const { data } = await axios.get('/api/store/product', {
+        // Admin products are fetched via /api/products
+        const { data } = await axios.get('/api/products', {
           headers: { Authorization: `Bearer ${token}` },
         });
         const product = (data.products || []).find((p) => p.id === editId);
         if (!product) {
           toast.error('Product not found');
-          router.replace('/store/manage-product');
+          router.replace('/admin/manage-product');
           return;
         }
         setProductInfo({
@@ -95,7 +94,6 @@ export default function AddProductPage() {
           selectedCategories: product.category || [],
         });
         setExistingImages(product.images || []);
-        // keyFeatures stored as String[] in DB
         setKeyFeatures(
           Array.isArray(product.keyFeatures) && product.keyFeatures.length > 0
             ? product.keyFeatures
@@ -110,7 +108,6 @@ export default function AddProductPage() {
     fetchProduct();
   }, [isEditMode, editId]);
 
-  // ── Handlers ─────────────────────────────────────────────────────
   const onChangeHandler = (e) =>
     setProductInfo({ ...productInfo, [e.target.name]: e.target.value });
 
@@ -144,15 +141,11 @@ export default function AddProductPage() {
   const removeExistingImage = (index) =>
     setExistingImages((prev) => prev.filter((_, i) => i !== index));
 
-  // ── Key Features ─────────────────────────────────────────────────
   const addFeatureField = () => setKeyFeatures((prev) => [...prev, '']);
-
   const updateFeature = (index, value) =>
     setKeyFeatures((prev) => prev.map((f, i) => (i === index ? value : f)));
-
   const removeFeature = (index) => setKeyFeatures((prev) => prev.filter((_, i) => i !== index));
 
-  // ── Submit ────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -173,8 +166,9 @@ export default function AddProductPage() {
       const token = await getToken();
 
       if (isEditMode) {
+        // PUT /api/products?id=xxx — admin can edit any product
         await axios.put(
-          `/api/store/product?id=${editId}`,
+          `/api/products?id=${editId}`,
           {
             name: productInfo.name,
             description: productInfo.description,
@@ -193,8 +187,9 @@ export default function AddProductPage() {
           }
         );
         toast.success('Product updated successfully');
-        router.push('/store/manage-product');
+        router.push('/admin/manage-product');
       } else {
+        // POST /api/products — admin global product
         const formData = new FormData();
         formData.append('name', productInfo.name);
         formData.append('description', productInfo.description);
@@ -205,11 +200,11 @@ export default function AddProductPage() {
         formData.append('keyFeatures', JSON.stringify(cleanedFeatures));
         imageFiles.forEach((file) => formData.append('images', file));
 
-        const { data } = await axios.post('/api/store/product', formData, {
+        const { data } = await axios.post('/api/products', formData, {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        toast.success(data.message || 'Product added successfully');
+        toast.success(data.message || 'Global product created successfully');
 
         setProductInfo({
           name: '',
@@ -255,23 +250,33 @@ export default function AddProductPage() {
               </>
             ) : (
               <>
-                <PlusCircle size={24} className="text-indigo-500" />
-                Add New Product
+                <PlusCircle size={24} className="text-green-500" />
+                Add Global Product
               </>
             )}
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
             {isEditMode
-              ? 'Update the details below to edit your product'
-              : 'Fill in the details below to list a new product'}
+              ? 'Update the details below to edit this product'
+              : 'This product will be visible to all users globally'}
           </p>
         </div>
+
+        {!isEditMode && (
+          <div className="mb-6 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm text-purple-700">
+            <Globe size={16} className="text-purple-500 flex-shrink-0" />
+            <p>
+              Products created here are <strong>global</strong> — visible to all users on the public
+              shop page, not tied to any store.
+            </p>
+          </div>
+        )}
 
         <form
           onSubmit={handleSubmit}
           className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-6"
         >
-          {/* ── Images ───────────────────────────────────────────── */}
+          {/* ── Images ─────────────────────────────────────────── */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <UploadCloud size={16} className="text-indigo-500" />
@@ -336,7 +341,7 @@ export default function AddProductPage() {
               </div>
             )}
 
-            <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg p-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all">
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg p-6 cursor-pointer hover:border-green-300 hover:bg-green-50/30 transition-all">
               <UploadCloud size={28} className="text-slate-400 mb-2" />
               <span className="text-sm text-slate-500">
                 {isEditMode ? 'Click to add more images' : 'Click to upload images'}
@@ -352,7 +357,7 @@ export default function AddProductPage() {
             </label>
           </div>
 
-          {/* ── Product Name ─────────────────────────────────────── */}
+          {/* ── Product Name ──────────────────────────────────── */}
           <label className="flex flex-col gap-2">
             <span className="font-medium text-slate-700 flex items-center gap-2">
               <ShoppingBag size={16} className="text-purple-500" />
@@ -365,11 +370,11 @@ export default function AddProductPage() {
               onChange={onChangeHandler}
               placeholder="Enter product name"
               required
-              className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50 placeholder:text-slate-400"
+              className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50 placeholder:text-slate-400"
             />
           </label>
 
-          {/* ── Description ──────────────────────────────────────── */}
+          {/* ── Description ──────────────────────────────────── */}
           <label className="flex flex-col gap-2">
             <span className="font-medium text-slate-700 flex items-center gap-2">
               <Tag size={16} className="text-amber-500" />
@@ -382,11 +387,11 @@ export default function AddProductPage() {
               placeholder="Describe your product"
               rows={4}
               required
-              className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-100 bg-slate-50 placeholder:text-slate-400"
+              className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-green-100 bg-slate-50 placeholder:text-slate-400"
             />
           </label>
 
-          {/* ── Prices + Stock ────────────────────────────────────── */}
+          {/* ── Prices + Stock ─────────────────────────────────── */}
           <div className="flex flex-col sm:flex-row gap-4">
             <label className="flex flex-col gap-2 flex-1">
               <span className="font-medium text-slate-700 flex items-center gap-2">
@@ -405,7 +410,7 @@ export default function AddProductPage() {
                   placeholder="0.00"
                   min="0"
                   required
-                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50"
+                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50"
                 />
               </div>
             </label>
@@ -426,7 +431,7 @@ export default function AddProductPage() {
                   placeholder="0.00"
                   min="0"
                   required
-                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50"
+                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50"
                 />
               </div>
             </label>
@@ -443,12 +448,12 @@ export default function AddProductPage() {
                 placeholder="0"
                 min="0"
                 required
-                className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50"
+                className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50"
               />
             </label>
           </div>
 
-          {/* ── Key Features ─────────────────────────────────────── */}
+          {/* ── Key Features ─────────────────────────────────── */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <Zap size={16} className="text-yellow-500" />
@@ -460,7 +465,7 @@ export default function AddProductPage() {
             <div className="space-y-2">
               {keyFeatures.map((feature, index) => (
                 <div key={index} className="flex items-center gap-2">
-                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-50 text-indigo-500 text-xs font-bold flex items-center justify-center">
+                  <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-50 text-green-500 text-xs font-bold flex items-center justify-center">
                     {index + 1}
                   </div>
                   <input
@@ -468,7 +473,7 @@ export default function AddProductPage() {
                     value={feature}
                     onChange={(e) => updateFeature(index, e.target.value)}
                     placeholder="e.g. Fast charging, Lightweight design..."
-                    className="flex-1 p-2.5 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50 placeholder:text-slate-400 text-sm"
+                    className="flex-1 p-2.5 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50 placeholder:text-slate-400 text-sm"
                   />
                   {keyFeatures.length > 1 && (
                     <button
@@ -485,20 +490,20 @@ export default function AddProductPage() {
             <button
               type="button"
               onClick={addFeatureField}
-              className="mt-3 flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium px-3 py-2 rounded-lg hover:bg-indigo-50 transition-all border border-dashed border-indigo-200"
+              className="mt-3 flex items-center gap-2 text-sm text-green-600 hover:text-green-700 font-medium px-3 py-2 rounded-lg hover:bg-green-50 transition-all border border-dashed border-green-200"
             >
               <Plus size={15} />
               Add Feature
             </button>
           </div>
 
-          {/* ── Categories ────────────────────────────────────────── */}
+          {/* ── Categories ───────────────────────────────────── */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <Package size={16} className="text-blue-500" />
               Categories
               {productInfo.selectedCategories.length > 0 && (
-                <span className="ml-1 text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">
+                <span className="ml-1 text-xs bg-green-100 text-green-600 px-2 py-0.5 rounded-full">
                   {productInfo.selectedCategories.length} selected
                 </span>
               )}
@@ -510,7 +515,7 @@ export default function AddProductPage() {
               </div>
             ) : categories.length === 0 ? (
               <p className="text-sm text-red-500 bg-red-50 p-3 rounded-lg">
-                No categories found. Ask the admin to create categories first.
+                No categories found. Create categories first.
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -523,8 +528,8 @@ export default function AddProductPage() {
                       onClick={() => toggleCategory(cat.name)}
                       className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${
                         isSelected
-                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+                          ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-green-300 hover:text-green-600'
                       }`}
                     >
                       {isSelected && <span className="mr-1">✓</span>}
@@ -541,12 +546,12 @@ export default function AddProductPage() {
             )}
           </div>
 
-          {/* ── Submit ───────────────────────────────────────────── */}
+          {/* ── Submit ─────────────────────────────────────────── */}
           <div className="flex justify-end gap-3 pt-2">
             {isEditMode && (
               <button
                 type="button"
-                onClick={() => router.push('/store/manage-product')}
+                onClick={() => router.push('/admin/manage-product')}
                 className="px-6 py-3 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-all"
               >
                 Cancel
@@ -555,12 +560,12 @@ export default function AddProductPage() {
             <button
               type="submit"
               disabled={loading}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
                   <Loader2 size={18} className="animate-spin" />
-                  {isEditMode ? 'Saving...' : 'Adding Product...'}
+                  {isEditMode ? 'Saving...' : 'Creating Product...'}
                 </>
               ) : isEditMode ? (
                 <>
@@ -570,7 +575,7 @@ export default function AddProductPage() {
               ) : (
                 <>
                   <PlusCircle size={18} />
-                  Add Product
+                  Create Global Product
                 </>
               )}
             </button>

@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\(public)\page.jsx
 'use client'
 import BestSelling from "@/components/BestSelling";
 import Hero from "@/components/Hero";

@@ -1,17 +1,6 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\ProductCard.jsx
 'use client';
-import {
-  StarIcon,
-  Eye,
-  Tag,
-  CheckCircle,
-  Zap,
-  ShoppingCart,
-  Heart,
-  ExternalLink,
-  Shield,
-  Truck,
-  Package,
-} from 'lucide-react';
+import { StarIcon, Tag, CheckCircle, ShoppingCart, Heart, ExternalLink } from 'lucide-react';
 import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
@@ -33,24 +22,20 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
   const isInCart = cartItems.some((item) => item.id === product.id);
   const isInWishlist = wishlistItems.some((item) => item.id === product.id);
 
-  // Average rating
   const rating =
     Math.round(
       product.rating?.reduce((acc, curr) => acc + curr.rating, 0) / (product.rating?.length || 1)
     ) || 0;
 
-  // Discount
   const discountPercentage =
     product.mrp && product.price < product.mrp
       ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
       : 0;
 
-  // ── Multiple categories: ["Electronics","Accessories"] → "Electronics + Accessories"
   const categoryDisplay = Array.isArray(product.category)
     ? product.category.join(' + ')
     : product.category || '';
 
-  // First category only for background color
   const firstCategory = Array.isArray(product.category)
     ? (product.category[0] || '').toLowerCase()
     : (product.category || '').toLowerCase();
@@ -65,7 +50,6 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
     return 'bg-gradient-to-br from-[#dbe7fb] to-[#bfd7fc]';
   };
 
-  // Cycle images on hover
   useEffect(() => {
     if (isHovering && product.images?.length > 1) {
       const interval = setInterval(() => {
@@ -101,6 +85,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             quantity: 1,
             category: categoryDisplay,
             stock: product.quantity ?? 1,
+            storeId: product.storeId, // ✅ FIX: storeId saved into cart
           },
         })
       );
@@ -116,7 +101,6 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
   const toggleWishlist = (e) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (isInWishlist) {
       dispatch(removeFromWishlist(product.id));
       toast.error('Removed from wishlist', {
@@ -149,7 +133,7 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
       onClick={() => router.push(`/product/${product.id}`)}
     >
       <div className="rounded-xl overflow-hidden bg-white border border-slate-200 hover:border-slate-300 shadow-sm hover:shadow-md transition-all duration-300 h-full flex flex-col">
-        {/* Image Container */}
+        {/* Image */}
         <div
           className={`h-48 sm:h-56 w-full flex items-center justify-center overflow-hidden relative ${getBgClass()}`}
         >
@@ -158,16 +142,13 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
               <div className="absolute top-0 left-0 right-0 bottom-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
             </div>
           )}
-
           <div className="relative w-full h-full flex items-center justify-center p-4">
             {product.images?.map((image, index) => (
               <Image
                 key={index}
                 width={500}
                 height={500}
-                className={`absolute inset-0 h-full w-full object-contain object-center p-4 transition-opacity duration-500 ${
-                  index === activeImageIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'
-                } ${imageLoaded ? '' : 'opacity-0'}`}
+                className={`absolute inset-0 h-full w-full object-contain object-center p-4 transition-opacity duration-500 ${index === activeImageIndex ? 'opacity-100 z-10' : 'opacity-0 z-0'} ${imageLoaded ? '' : 'opacity-0'}`}
                 src={image}
                 alt={`${product.name} - ${index + 1}`}
                 onLoad={() => {
@@ -177,47 +158,35 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             ))}
           </div>
 
-          {/* Image indicators */}
           {product.images?.length > 1 && (
             <div className="absolute bottom-10 left-1/2 transform -translate-x-1/2 flex gap-1.5 z-20">
               {product.images.map((_, index) => (
                 <div
                   key={index}
-                  className={`h-1.5 rounded-full transition-all duration-300 ${
-                    activeImageIndex === index ? 'w-4 bg-slate-800' : 'w-1.5 bg-slate-400/50'
-                  }`}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${activeImageIndex === index ? 'w-4 bg-slate-800' : 'w-1.5 bg-slate-400/50'}`}
                 />
               ))}
             </div>
           )}
 
-          {/* Discount badge */}
           {discountPercentage > 0 && (
             <div className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full z-20 shadow-sm">
               -{discountPercentage}%
             </div>
           )}
-
-          {/* Custom badge */}
           {badgeText && !discountPercentage && (
             <div className="absolute top-3 left-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full z-20 flex items-center gap-1.5 shadow-md">
               {badgeIcon} {badgeText}
             </div>
           )}
 
-          {/* Wishlist */}
           <button
-            className={`absolute top-3 right-3 z-30 p-2 rounded-full shadow-md transition-all duration-300 ${
-              isInWishlist
-                ? 'bg-red-500 text-white'
-                : 'bg-white/80 backdrop-blur-sm text-slate-600 hover:bg-white hover:text-red-500'
-            }`}
+            className={`absolute top-3 right-3 z-30 p-2 rounded-full shadow-md transition-all duration-300 ${isInWishlist ? 'bg-red-500 text-white' : 'bg-white/80 backdrop-blur-sm text-slate-600 hover:bg-white hover:text-red-500'}`}
             onClick={toggleWishlist}
           >
             <Heart size={18} fill={isInWishlist ? 'white' : 'none'} />
           </button>
 
-          {/* Out of Stock overlay */}
           {!product.inStock && (
             <div className="absolute inset-0 bg-white/70 flex items-center justify-center z-20">
               <span className="bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-full">
@@ -226,22 +195,19 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             </div>
           )}
 
-          {/* Category pill — shows ALL categories with + */}
           <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-xs text-slate-700 px-2.5 py-1 rounded-full z-20 border border-slate-200/50 shadow-sm flex items-center gap-1.5 max-w-[75%]">
             <Tag size={10} className="text-slate-500 flex-shrink-0" />
             <span className="truncate">{categoryDisplay}</span>
           </div>
         </div>
 
-        {/* Product Info */}
+        {/* Info */}
         <div className="p-3.5 sm:p-5 flex-1 flex flex-col">
           <h3 className="font-medium text-sm sm:text-base text-slate-800 line-clamp-2 min-h-[2.5rem] mb-2 leading-snug group-hover:text-green-700 transition-colors">
             {product.name}
           </h3>
-
           <div className="flex-grow" />
 
-          {/* Price */}
           <div className="flex items-center gap-2 mt-1 mb-2 bg-slate-50 p-2 rounded-md">
             <p className="font-bold text-base sm:text-lg text-slate-900">
               ₹{product.price.toLocaleString('en-IN')}
@@ -258,7 +224,6 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             )}
           </div>
 
-          {/* Rating */}
           <div className="flex items-center gap-1.5 mb-3">
             <div className="flex">
               {Array(5)
@@ -277,7 +242,6 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             </span>
           </div>
 
-          {/* Stock indicator */}
           <div className="mb-3">
             {product.inStock ? (
               <span className="text-xs text-green-600 font-medium">
@@ -288,14 +252,13 @@ const ProductCard = ({ product, badgeText, badgeIcon }) => {
             )}
           </div>
 
-          {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row gap-1 mt-auto">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 router.push(`/product/${product.id}`);
               }}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-md transition-all duration-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium border border-slate-200 hover:border-slate-300"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 px-2 rounded-md transition-all duration-200 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium border border-slate-200"
             >
               <ExternalLink size={16} />
               View Details

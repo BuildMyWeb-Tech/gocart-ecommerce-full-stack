@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\middlewares\authAdmin.js
 import { clerkClient } from "@clerk/nextjs/server"
 
 

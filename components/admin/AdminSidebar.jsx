@@ -1,61 +1,60 @@
-'use client'
-import { usePathname } from "next/navigation"
+// components/admin/AdminSidebar.jsx
+// UPDATED: Added "Add Product" and "Manage Products" links
+'use client';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
-  ShieldCheckIcon,
-  StoreIcon,
-  TicketPercentIcon,
-  ShoppingBagIcon,
-  UsersIcon,
-  SettingsIcon,
-  LayoutDashboardIcon,
-  LayersIcon,
+  LayoutDashboard,
+  Store,
+  CheckSquare,
+  Layers,
+  Ticket,
+  PlusCircle,
+  PackageSearch,
 } from 'lucide-react';
-import Link from "next/link"
-import { useUser } from "@clerk/nextjs"
 
-const AdminSidebar = ({ setSidebarOpen }) => {
-    const { user } = useUser()
-    const pathname = usePathname()
+const navLinks = [
+  { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  { label: 'Stores', href: '/admin/stores', icon: Store },
+  { label: 'Approve', href: '/admin/approve', icon: CheckSquare },
+  { label: 'Categories', href: '/admin/categories', icon: Layers },
+  { label: 'Add Product', href: '/admin/add-product', icon: PlusCircle },
+  { label: 'Manage Products', href: '/admin/manage-product', icon: PackageSearch },
+  { label: 'Coupons', href: '/admin/coupons', icon: Ticket },
+];
 
-    const sidebarLinks = [
-      { name: 'Dashboard',    href: '/admin',          icon: LayoutDashboardIcon },
-      { name: 'Categories',   href: '/admin/categories', icon: LayersIcon },
-      { name: 'Stores',       href: '/admin/stores',   icon: StoreIcon },
-      { name: 'Approve Store',href: '/admin/approve',  icon: ShieldCheckIcon },
-      { name: 'Coupons',      href: '/admin/coupons',  icon: TicketPercentIcon },
-      { name: 'Products',     href: '/admin/products', icon: ShoppingBagIcon },
-      { name: 'Users',        href: '/admin/users',    icon: UsersIcon },
-      { name: 'Settings',     href: '/admin/settings', icon: SettingsIcon },
-    ];
+export default function AdminSidebar() {
+  const pathname = usePathname();
 
-    return user && (
-        <div className="inline-flex h-full flex-col bg-white border-r border-slate-200 shadow-sm min-w-64 w-64">
-            <div className="flex-1 overflow-y-auto py-2">
-                <nav className="px-3 space-y-1">
-                    {sidebarLinks.map((link, index) => (
-                        <Link
-                            key={index}
-                            href={link.href}
-                            className={`relative flex items-center gap-3 p-3 rounded-lg transition-colors duration-150 ${
-                                pathname === link.href
-                                ? 'bg-green-50 text-green-600'
-                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-700'
-                            }`}
-                            onClick={() => {
-                                if (window.innerWidth < 768) setSidebarOpen(false)
-                            }}
-                        >
-                            <link.icon size={18} />
-                            <p className="text-sm font-medium">{link.name}</p>
-                            {pathname === link.href && (
-                                <span className="absolute inset-y-0 left-0 w-1 bg-green-600 rounded-r-full" aria-hidden="true" />
-                            )}
-                        </Link>
-                    ))}
-                </nav>
-            </div>
-        </div>
-    )
+  return (
+    <aside className="w-60 min-h-screen bg-white border-r border-slate-100 flex flex-col py-6 px-3">
+      <div className="mb-8 px-3">
+        <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+          Admin Panel
+        </span>
+      </div>
+
+      <nav className="flex flex-col gap-1">
+        {navLinks.map(({ label, href, icon: Icon }) => {
+          // Active: exact for /admin, startsWith for others
+          const isActive = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
+
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                isActive
+                  ? 'bg-green-50 text-green-700'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+              }`}
+            >
+              <Icon size={18} className={isActive ? 'text-green-600' : 'text-slate-400'} />
+              {label}
+            </Link>
+          );
+        })}
+      </nav>
+    </aside>
+  );
 }
-
-export default AdminSidebar

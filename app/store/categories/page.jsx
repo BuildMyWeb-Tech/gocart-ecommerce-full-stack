@@ -1,810 +1,712 @@
-'use client'
-import { assets } from "@/assets/assets"
-import { useAuth } from "@clerk/nextjs"
-import axios from "axios"
-import Image from "next/image"
-import { useEffect, useState, useRef } from "react"
-import { toast } from "react-hot-toast"
+// app/store/categories/page.jsx
+'use client';
+import { useAuth } from '@clerk/nextjs';
+import axios from 'axios';
+import Image from 'next/image';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'react-hot-toast';
 import {
-  PlusCircle,
-  Camera,
-  ImagePlus,
-  Tag,
-  Search,
-  ArrowLeft,
-  X,
-  Edit,
-  Trash2,
-  Upload,
-  Scissors,
-  CheckCircle,
-  Pencil,
   AlertTriangle,
-  Info,
-  SlidersHorizontal,
   ChevronLeft,
-  Package,
-  ShoppingBag,
+  Globe,
+  ImagePlus,
+  Info,
   Layers,
-  BarChart,
-  Filter,
   LayoutGrid,
   List,
-  Clock,
-  TrendingUp,
-  Star,
-  ChevronRight
-} from "lucide-react";
+  Loader2,
+  Pencil,
+  PlusCircle,
+  Search,
+  Store,
+  Trash2,
+  Upload,
+  X,
+  PackageSearch,
+  CheckSquare,
+  Square,
+} from 'lucide-react';
 
+export default function StoreCategoriesPage() {
+  const { getToken } = useAuth();
+  const fileInputRef = useRef(null);
 
-export default function ProductCategoryManagement() {
-    const [productCategories, setProductCategories] = useState([
-      { id: 1, name: "Electronics", description: "Smartphones, Laptops, Tablets, and more", image: "/images/electronics.jpg" },
-      { id: 2, name: "Fashion", description: "Clothing, Shoes, Accessories, and more", image: "/images/fashion.jpg"  },
-      
-    ])
-    const [showAddForm, setShowAddForm] = useState(false)
-    const [showEditForm, setShowEditForm] = useState(false)
-    const [showDeleteModal, setShowDeleteModal] = useState(false)
-    const [searchTerm, setSearchTerm] = useState("")
-    const [selectedCategory, setSelectedCategory] = useState(null)
-    const [loading, setLoading] = useState(false)
-    const [viewMode, setViewMode] = useState('grid')
-    const [formData, setFormData] = useState({
-      name: "",
-      description: "",
-    })
-    const [imageFile, setImageFile] = useState(null)
-    const [imagePreview, setImagePreview] = useState(null)
-    const fileInputRef = useRef(null)
-    
-    const { getToken } = useAuth()
+  const [categories, setCategories] = useState([]);
+  const [pageLoading, setPageLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState('grid');
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({ name: '', description: '' });
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
 
-    // Filter categories based on search term
-    const filteredCategories = productCategories.filter(
-      category => 
-        category.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        category.description.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    
-    // Handle image upload
-    const handleImageUpload = (e) => {
-      const file = e.target.files[0]
-      if (!file) return
-      
-      setImageFile(file)
-      
-      const reader = new FileReader()
-      reader.onload = () => {
-        setImagePreview(reader.result)
-      }
-      reader.readAsDataURL(file)
+  // Delete state
+  const [deleteModal, setDeleteModal] = useState({ open: false, id: null, name: '' });
+  const [depLoading, setDepLoading] = useState(false);
+  const [depInfo, setDepInfo] = useState(null);
+  const [deleteProducts, setDeleteProducts] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const fetchCategories = async () => {
+    try {
+      setPageLoading(true);
+      const token = await getToken();
+      const { data } = await axios.get('/api/categories', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setCategories(data.categories || []);
+    } catch {
+      toast.error('Failed to load categories');
+    } finally {
+      setPageLoading(false);
     }
-    
-    // Handle form input changes
-    const handleInputChange = (e) => {
-      const { name, value } = e.target
-      setFormData(prev => ({ ...prev, [name]: value }))
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const filtered = categories.filter(
+    (c) =>
+      c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      c.description.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Store can only edit/delete their OWN store categories
+  const canModify = (cat) => cat.createdBy === 'STORE';
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImageFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setImagePreview(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const clearImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const openAddForm = () => {
+    setEditingId(null);
+    setFormData({ name: '', description: '' });
+    clearImage();
+    setShowForm(true);
+  };
+
+  const openEditForm = (cat) => {
+    if (!canModify(cat)) {
+      toast.error('You cannot edit global admin categories');
+      return;
     }
-    
-    // Reset form data
-    const resetForm = () => {
-      setFormData({ name: "", description: "" })
-      setImageFile(null)
-      setImagePreview(null)
+    setEditingId(cat.id);
+    setFormData({ name: cat.name, description: cat.description });
+    setImageFile(null);
+    setImagePreview(cat.image);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setFormData({ name: '', description: '' });
+    clearImage();
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingId && !imageFile) {
+      toast.error('Please upload a category image');
+      return;
     }
-    
-    // Open edit form with selected category data
-    const openEditForm = (category) => {
-      setSelectedCategory(category)
-      setFormData({
-        name: category.name,
-        description: category.description,
-      })
-      setImagePreview(category.image)
-      setShowEditForm(true)
-    }
-    
-    // Open delete confirmation modal
-    const openDeleteModal = (category) => {
-      setSelectedCategory(category)
-      setShowDeleteModal(true)
-    }
-    
-    // Handle form submission (Add/Edit)
-    const handleSubmit = async (e) => {
-      e.preventDefault()
-      setLoading(true)
-      
-      try {
-        if (!formData.name.trim()) {
-          throw new Error("Category name is required")
-        }
-        
-        if (!imageFile && !imagePreview) {
-          throw new Error("Category image is required")
-        }
-        
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800))
-        
-        if (showEditForm && selectedCategory) {
-          // Update existing category
-          const updatedCategories = productCategories.map(cat => 
-            cat.id === selectedCategory.id 
-              ? { 
-                  ...cat, 
-                  name: formData.name, 
-                  description: formData.description,
-                  image: imagePreview || cat.image
-                } 
-              : cat
-          )
-          setProductCategories(updatedCategories)
-          toast.success("Product category updated successfully")
-        } else {
-          // Add new category
-          const newCategory = {
-            id: Date.now(),
-            name: formData.name,
-            description: formData.description,
-            image: imagePreview,
-            productCount: 0
-          }
-          setProductCategories([...productCategories, newCategory])
-          toast.success("Product category added successfully")
-        }
-        
-        // Close forms and reset data
-        setShowAddForm(false)
-        setShowEditForm(false)
-        resetForm()
-      } catch (error) {
-        toast.error(error.message)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    // Handle category deletion
-    const handleDeleteCategory = async () => {
-      if (!selectedCategory) return
-      setLoading(true)
-      
-      try {
-        // Simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800))
-        
-        const updatedCategories = productCategories.filter(
-          category => category.id !== selectedCategory.id
-        )
-        setProductCategories(updatedCategories)
-        toast.success("Product category deleted successfully")
-        setShowDeleteModal(false)
-      } catch (error) {
-        toast.error(error.message)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    // Determine which view to show
-    const renderView = () => {
-      if (showAddForm) {
-        return renderAddForm()
-      } else if (showEditForm) {
-        return renderEditForm()
+    try {
+      setSubmitting(true);
+      const token = await getToken();
+      const fd = new FormData();
+      fd.append('name', formData.name);
+      fd.append('description', formData.description);
+      if (imageFile) fd.append('image', imageFile);
+
+      if (editingId) {
+        fd.append('id', editingId);
+        const { data } = await axios.put('/api/categories', fd, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success(data.message || 'Category updated!');
+        setCategories((prev) => prev.map((c) => (c.id === editingId ? data.category : c)));
       } else {
-        return renderCategoriesList()
+        const { data } = await axios.post('/api/categories', fd, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        toast.success(data.message || 'Category created!');
+        setCategories((prev) => [data.category, ...prev]);
       }
+      closeForm();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to save category');
+    } finally {
+      setSubmitting(false);
     }
-    
-    // Render the categories list
-    const renderCategoriesList = () => (
-      <>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl text-slate-800 font-bold flex items-center gap-2">
-              <div className="p-2 bg-green-50 rounded-lg text-green-600">
-                <Layers size={24} />
-              </div>
-              Product Categories
-            </h1>
-            <p className="text-slate-500 text-sm mt-1">Organize your store with customizable product categories</p>
+  };
+
+  const openDelete = async (cat) => {
+    if (!canModify(cat)) {
+      toast.error('You cannot delete global admin categories');
+      return;
+    }
+    setDeleteModal({ open: true, id: cat.id, name: cat.name });
+    setDepInfo(null);
+    setDeleteProducts(false);
+    setDepLoading(true);
+    try {
+      const token = await getToken();
+      const { data } = await axios.get(`/api/categories?checkOnly=true&id=${cat.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDepInfo(data);
+    } catch {
+      toast.error('Failed to check dependencies');
+    } finally {
+      setDepLoading(false);
+    }
+  };
+
+  const closeDelete = () => {
+    setDeleteModal({ open: false, id: null, name: '' });
+    setDepInfo(null);
+    setDeleteProducts(false);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      setDeleting(true);
+      const token = await getToken();
+      const { data } = await axios.delete('/api/categories', {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { id: deleteModal.id, deleteProducts },
+      });
+      setCategories((prev) => prev.filter((c) => c.id !== deleteModal.id));
+      toast.success(data.message || 'Category deleted');
+      closeDelete();
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const ScopeBadge = ({ cat }) => {
+    const isGlobal = cat.createdBy === 'ADMIN';
+    return (
+      <span
+        className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${isGlobal ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}
+      >
+        {isGlobal ? (
+          <>
+            <Globe size={10} /> Global
+          </>
+        ) : (
+          <>
+            <Store size={10} /> Mine
+          </>
+        )}
+      </span>
+    );
+  };
+
+  // ── Form ──────────────────────────────────────────────────────
+  if (showForm) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-6">
+        <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between p-6 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={closeForm}
+                className="p-2 hover:bg-slate-100 rounded-full text-slate-600"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                {editingId ? (
+                  <>
+                    <Pencil size={18} className="text-indigo-500" /> Edit Category
+                  </>
+                ) : (
+                  <>
+                    <PlusCircle size={18} className="text-green-500" /> Add Category
+                  </>
+                )}
+              </h2>
+            </div>
+            <button
+              onClick={closeForm}
+              className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500"
+            >
+              <X size={20} />
+            </button>
           </div>
-          
-          <button 
-            onClick={() => {
-              setShowAddForm(true)
-              resetForm()
-            }}
-            className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-5 py-2.5 rounded-lg transition-all shadow-sm flex items-center gap-2 text-sm font-medium"
-          >
-            <PlusCircle size={18} />
-            Add Category
-          </button>
-        </div>
-        
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between gap-3">
-            <div className="relative flex-grow max-w-md">
-              <input
-                type="text"
-                placeholder="Search categories..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-10 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-300 transition-all bg-slate-50"
-              />
-              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              
-              {searchTerm && (
-                <button 
-                  onClick={() => setSearchTerm('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100"
+
+          <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Image */}
+            <div className="md:col-span-1">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Category Image{!editingId && <span className="text-red-500 ml-1">*</span>}
+                {editingId && <span className="text-slate-400 text-xs ml-1">(optional)</span>}
+              </label>
+              <div
+                className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center h-48 relative overflow-hidden cursor-pointer group hover:border-green-400 transition-colors"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {imagePreview ? (
+                  <>
+                    <Image
+                      src={imagePreview}
+                      alt="Preview"
+                      fill
+                      className="object-cover group-hover:opacity-80 transition-opacity"
+                    />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                      <div className="bg-white rounded-full p-2.5 shadow-md">
+                        <Upload size={20} className="text-green-600" />
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="bg-green-50 p-3 rounded-full mb-2 text-green-500">
+                      <ImagePlus size={28} />
+                    </div>
+                    <p className="text-slate-700 text-sm font-medium">Upload image</p>
+                    <p className="text-slate-500 text-xs mt-1">Click to browse</p>
+                  </>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+              </div>
+              {imagePreview && (
+                <button
+                  type="button"
+                  onClick={clearImage}
+                  className="mt-2 flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
                 >
-                  <X size={16} />
+                  <X size={12} /> Remove image
                 </button>
               )}
             </div>
-            
-            <div className="flex items-center gap-2">
-              <div className="border border-slate-200 rounded-lg flex overflow-hidden">
-                <button 
-                  onClick={() => setViewMode('grid')} 
-                  className={`p-2.5 ${viewMode === 'grid' ? 'bg-green-50 text-green-600' : 'text-slate-500 hover:bg-slate-50'} transition-colors`}
-                >
-                  <LayoutGrid size={18} />
-                </button>
-                <button 
-                  onClick={() => setViewMode('list')} 
-                  className={`p-2.5 ${viewMode === 'list' ? 'bg-green-50 text-green-600' : 'text-slate-500 hover:bg-slate-50'} transition-colors`}
-                >
-                  <List size={18} />
-                </button>
+
+            {/* Fields */}
+            <div className="md:col-span-2 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Category Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Electronics"
+                  className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 bg-slate-50"
+                  required
+                />
               </div>
-              
-              {/* <button className="p-2.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 transition-colors">
-                <Filter size={18} />
-              </button> */}
-            </div>
-          </div>
-          
-          {viewMode === 'grid' ? (
-            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredCategories.length > 0 ? (
-                filteredCategories.map(category => (
-                  <div key={category.id} className="border border-slate-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow group">
-                    <div className="relative h-48 overflow-hidden bg-slate-100">
-                      <Image 
-                        src={category.image} 
-                        alt={category.name}
-                        fill
-                        className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
-                      />
-                      {/* <div className="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent"></div>
-                      <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1 text-xs font-medium text-slate-800 flex items-center">
-                        <Package size={12} className="mr-1 text-green-500" />
-                        {category.productCount} Products
-                      </div> */}
-                    </div>
-                    
-                    <div className="p-4">
-                      <h3 className="text-lg font-semibold text-slate-800 mb-1">{category.name}</h3>
-                      <p className="text-sm text-slate-500 line-clamp-2">{category.description}</p>
-                      
-                      <div className="flex mt-4 justify-between items-center">
-                        <button
-                          onClick={() => openEditForm(category)}
-                          className="text-green-600 text-sm font-medium hover:text-green-700 flex items-center gap-1"
-                        >
-                          Edit <ChevronRight size={16} />
-                        </button>
-                        
-                        <button 
-                          onClick={() => openDeleteModal(category)}
-                          className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
-                          aria-label="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-full bg-slate-50 rounded-lg p-8 text-center">
-                  <div className="bg-white p-4 rounded-full inline-flex items-center justify-center mb-3">
-                    <Info size={24} className="text-slate-400" />
-                  </div>
-                  <h3 className="text-lg font-medium text-slate-800 mb-1">No categories found</h3>
-                  <p className="text-slate-500 text-sm">
-                    {searchTerm ? "Try a different search term" : "Add your first product category"}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Describe this category..."
+                  rows={4}
+                  className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 bg-slate-50 resize-none"
+                  required
+                />
+              </div>
+              {!editingId && (
+                <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-lg p-3 text-sm text-blue-700">
+                  <Store size={16} className="text-blue-500 flex-shrink-0" />
+                  <p>
+                    This will be a <strong>store-scoped</strong> category — visible to your store
+                    and its customers.
                   </p>
                 </div>
               )}
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead className="bg-gradient-to-r from-slate-50 to-slate-100 text-slate-700 text-xs uppercase tracking-wider">
-                  <tr>
-                    <th className="px-6 py-4">Image</th>
-                    <th className="px-6 py-4">Name</th>
-                    <th className="px-6 py-4 hidden md:table-cell">Description</th>
-                    {/* <th className="px-6 py-4 text-center">Products</th> */}
-                    <th className="px-6 py-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredCategories.length > 0 ? (
-                    filteredCategories.map(category => (
-                      <tr key={category.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="h-16 w-20 relative overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                            <Image 
-                              src={category.image} 
-                              alt={category.name}
-                              fill
-                              className="object-cover h-full w-full"
-                            />
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 font-medium text-slate-800">{category.name}</td>
-                        <td className="px-6 py-4 text-slate-600 max-w-md truncate hidden md:table-cell">
-                          {category.description}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className="bg-green-50 text-green-600 px-2.5 py-1 rounded-full text-xs font-medium">
-                            {category.productCount}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-center gap-3">
-                            <button 
-                              onClick={() => openEditForm(category)}
-                              className="p-2 rounded-lg hover:bg-green-50 text-green-600 transition-colors"
-                              aria-label="Edit"
-                            >
-                              <Edit size={18} />
-                            </button>
-                            <button 
-                              onClick={() => openDeleteModal(category)}
-                              className="p-2 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
-                              aria-label="Delete"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                        <div className="flex flex-col items-center">
-                          <div className="bg-slate-100 p-4 rounded-full mb-3">
-                            <Info size={24} className="text-slate-400" />
-                          </div>
-                          <p className="text-slate-700 font-medium mb-1">No product categories found</p>
-                          <p className="text-sm text-slate-500">
-                            {searchTerm ? "Try a different search term" : "Add your first product category"}
-                          </p>
+
+            <div className="md:col-span-3 flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={closeForm}
+                disabled={submitting}
+                className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className={`px-5 py-2.5 rounded-lg text-white flex items-center gap-1.5 text-sm font-medium disabled:opacity-70 transition-colors ${editingId ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-green-600 hover:bg-green-700'}`}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Saving...
+                  </>
+                ) : editingId ? (
+                  <>
+                    <Pencil size={16} /> Save Changes
+                  </>
+                ) : (
+                  <>
+                    <PlusCircle size={16} /> Add Category
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // ── List View ─────────────────────────────────────────────────
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl text-slate-800 font-bold flex items-center gap-2">
+            <div className="p-2 bg-green-50 rounded-lg text-green-600">
+              <Layers size={24} />
+            </div>
+            Product Categories
+          </h1>
+          <p className="text-slate-500 text-sm mt-1">
+            <span className="text-purple-600 font-medium">Global</span> = admin categories
+            (read-only). <span className="text-blue-600 font-medium">Mine</span> = your store
+            categories (editable).
+          </p>
+        </div>
+        <button
+          onClick={openAddForm}
+          className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 text-sm font-medium transition-colors"
+        >
+          <PlusCircle size={18} /> Add Category
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+        {/* Toolbar */}
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between gap-3">
+          <div className="relative flex-grow max-w-md">
+            <input
+              type="text"
+              placeholder="Search categories..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-10 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 bg-slate-50"
+            />
+            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          <div className="border border-slate-200 rounded-lg flex overflow-hidden">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2.5 ${viewMode === 'grid' ? 'bg-green-50 text-green-600' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              <LayoutGrid size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2.5 ${viewMode === 'list' ? 'bg-green-50 text-green-600' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              <List size={18} />
+            </button>
+          </div>
+        </div>
+
+        {pageLoading ? (
+          <div className="flex items-center justify-center py-16 gap-2 text-slate-400">
+            <Loader2 size={20} className="animate-spin" />
+            <span className="text-sm">Loading...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+            <Info size={40} className="mb-3 text-slate-300" />
+            <p className="font-medium text-slate-600">
+              {searchTerm ? 'No results found' : 'No categories yet'}
+            </p>
+          </div>
+        ) : viewMode === 'grid' ? (
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filtered.map((cat) => {
+              const owned = canModify(cat);
+              return (
+                <div
+                  key={cat.id}
+                  className={`border rounded-xl overflow-hidden hover:shadow-md transition-shadow group ${owned ? 'border-slate-200' : 'border-slate-100 opacity-90'}`}
+                >
+                  <div className="relative h-44 bg-slate-100">
+                    <Image
+                      src={cat.image}
+                      alt={cat.name}
+                      fill
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    />
+                    <div className="absolute top-2 right-2">
+                      <ScopeBadge cat={cat} />
+                    </div>
+                    {!owned && (
+                      <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm text-xs text-slate-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Globe size={10} /> Read only
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="text-base font-semibold text-slate-800 mb-1">{cat.name}</h3>
+                    <p className="text-sm text-slate-500 line-clamp-2 mb-3">{cat.description}</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">
+                        {new Date(cat.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </span>
+                      {owned && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => openEditForm(cat)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => openDelete(cat)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-100">
+                <tr>
+                  <th className="text-left px-5 py-3.5 font-medium text-slate-500">Image</th>
+                  <th className="text-left px-5 py-3.5 font-medium text-slate-500">Name</th>
+                  <th className="text-left px-5 py-3.5 font-medium text-slate-500 hidden md:table-cell">
+                    Description
+                  </th>
+                  <th className="text-left px-5 py-3.5 font-medium text-slate-500">Scope</th>
+                  <th className="text-center px-5 py-3.5 font-medium text-slate-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((cat) => {
+                  const owned = canModify(cat);
+                  return (
+                    <tr
+                      key={cat.id}
+                      className="border-b border-slate-50 hover:bg-slate-50 transition-colors"
+                    >
+                      <td className="px-5 py-4">
+                        <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100">
+                          <Image src={cat.image} alt={cat.name} fill className="object-cover" />
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 font-medium text-slate-800">{cat.name}</td>
+                      <td className="px-5 py-4 text-slate-500 hidden md:table-cell max-w-xs">
+                        <p className="line-clamp-2">{cat.description}</p>
+                      </td>
+                      <td className="px-5 py-4">
+                        <ScopeBadge cat={cat} />
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-center gap-2">
+                          {owned ? (
+                            <>
+                              <button
+                                onClick={() => openEditForm(cat)}
+                                className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                              >
+                                <Pencil size={15} />
+                              </button>
+                              <button
+                                onClick={() => openDelete(cat)}
+                                className="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-xs text-slate-300 flex items-center gap-1">
+                              <Globe size={12} /> Read only
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-        
-        {filteredCategories.length > 0 && (
-          <div className="bg-green-50 border border-green-100 rounded-lg p-4 text-sm text-green-700 flex items-start gap-3">
-            <Info size={18} className="text-green-500 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="font-medium text-green-800 mb-1">Category Management Tips</p>
-              <ul className="list-disc pl-4 space-y-1 text-green-700">
-                <li>Create specific categories to make products easier to find</li>
-                <li>Use high-quality images that represent each category clearly</li>
-                <li>Keep descriptions concise but informative</li>
-                <li>Regularly review and update categories as your inventory changes</li>
-              </ul>
-            </div>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
-      </>
-    )
-    
-    // Render the add form
-    const renderAddForm = () => (
-      <div className="bg-white rounded-xl shadow-md border border-slate-200 max-w-3xl mx-auto animate-in slide-in-from-right-1/4 duration-300">
-        <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setShowAddForm(false)}
-              className="p-2 hover:bg-slate-100 rounded-full text-slate-600 transition-colors"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <h2 className="text-xl font-bold text-slate-800">Add New Product Category</h2>
-          </div>
-          
-          <button 
-            onClick={() => setShowAddForm(false)}
-            className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-1">
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Category Image <span className="text-red-500">*</span>
-            </label>
-            <div 
-              className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center p-6 h-48 relative overflow-hidden cursor-pointer group"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {imagePreview ? (
-                <>
-                  <Image 
-                    src={imagePreview}
-                    alt="Category preview"
-                    fill
-                    className="object-cover group-hover:opacity-80 transition-opacity"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100">
-                    <div className="bg-white rounded-full p-2.5 shadow-md">
-                      <Upload size={20} className="text-green-600" />
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="bg-green-50 p-3 rounded-full mb-2 text-green-500">
-                    <ImagePlus size={28} />
-                  </div>
-                  <p className="text-slate-700 text-center text-sm font-medium">Upload category image</p>
-                  <p className="text-slate-500 text-center text-xs mt-1">Click to browse</p>
-                </>
-              )}
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImageUpload}
-                accept="image/*"
-                className="hidden"
-              />
-            </div>
-            {/* <p className="mt-2 text-xs text-slate-500">
-              Recommended: Square image, at least 600x600px
-            </p> */}
-          </div>
-          
-          <div className="md:col-span-2 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Category Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="e.g., Electronics, Clothing, Home & Kitchen"
-                className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-300 bg-slate-50"
-                required
-              />
-              {/* <p className="mt-1 text-xs text-slate-500">
-                A clear name helps customers find products easily
-              </p> */}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Description <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                placeholder="Describe what types of products are included in this category..."
-                rows={5}
-                className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-300 bg-slate-50 resize-none"
-                required
-              />
-              {/* <p className="mt-1 text-xs text-slate-500">
-                Include keywords that customers might search for
-              </p> */}
-            </div>
-            
-            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-800 flex items-start gap-2 mt-6">
-              <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
-              <p>
-                Categories are used to organize products and improve store navigation. Creating clear categories enhances the shopping experience.
-              </p>
-            </div>
-          </div>
-          
-          <div className="md:col-span-3 flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setShowAddForm(false)}
-              className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium"
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2.5 bg-gradient-to-r from-green-600 to-green-700 rounded-lg text-white hover:from-green-700 hover:to-green-800 transition-all flex items-center gap-1.5 text-sm font-medium disabled:opacity-70 disabled:cursor-not-allowed shadow-sm"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <PlusCircle size={16} />
-                  Add Category
-                </>
-              )}
-            </button>
-          </div>
-        </form>
       </div>
-    )
-    
-    // Render the edit form
-    const renderEditForm = () => (
-      <div className="bg-white rounded-xl shadow-md border border-slate-200 max-w-3xl mx-auto animate-in slide-in-from-right-1/4 duration-300">
-        <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setShowEditForm(false)}
-              className="p-2 hover:bg-slate-100 rounded-full text-slate-600 transition-colors"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <h2 className="text-xl font-bold text-slate-800">Edit Product Category</h2>
-          </div>
-          
-          <button 
-            onClick={() => setShowEditForm(false)}
-            className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-1">
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Category Image <span className="text-red-500">*</span>
-            </label>
-            <div 
-              className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center p-6 h-48 relative overflow-hidden cursor-pointer group"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {imagePreview ? (
-                <>
-                  <Image 
-                    src={imagePreview}
-                    alt="Category preview"
-                    fill
-                    className="object-cover group-hover:opacity-80 transition-opacity"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100">
-                    <div className="bg-white rounded-full p-2.5 shadow-md">
-                      <Upload size={20} className="text-green-600" />
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="bg-green-50 p-3 rounded-full mb-2 text-green-500">
-                    <ImagePlus size={28} />
-                  </div>
-                  <p className="text-slate-700 text-center text-sm font-medium">Upload category image</p>
-                  <p className="text-slate-500 text-center text-xs mt-1">Click to browse</p>
-                </>
-              )}
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImageUpload}
-                accept="image/*"
-                className="hidden"
-              />
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Recommended: Square image, at least 600x600px
-            </p>
-          </div>
-          
-          <div className="md:col-span-2 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Category Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                name="name"
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="e.g., Electronics, Clothing, Home & Kitchen"
-                className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-300 bg-slate-50"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Description <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                name="description"
-                value={formData.description}
-                onChange={handleInputChange}
-                placeholder="Describe what types of products are included in this category..."
-                rows={5}
-                className="w-full p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 focus:border-green-300 bg-slate-50 resize-none"
-                required
-              />
-            </div>
-            
-            {selectedCategory?.productCount > 0 && (
-              <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-sm text-green-700 flex items-start gap-2 mt-4">
-                <Info size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
-                <p>
-                  This category contains <strong>{selectedCategory.productCount} products</strong>. 
-                  Changing the category name will affect how these products are organized and displayed in your store.
+
+      <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-700 flex items-start gap-3">
+        <Info size={18} className="text-blue-500 mt-0.5 flex-shrink-0" />
+        <p>
+          <span className="font-medium text-blue-800">Tip: </span>
+          <span className="text-purple-600 font-medium">Global</span> categories (admin) are visible
+          to all users. Your <span className="text-blue-600 font-medium">store</span> categories are
+          visible to your store customers too.
+        </p>
+      </div>
+
+      {/* ── Delete Modal ────────────────────────────────────────── */}
+      {deleteModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={closeDelete}
+          />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-6 z-10">
+            <div className="flex items-start gap-4 mb-5">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <AlertTriangle size={18} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-800">Delete Category</h3>
+                <p className="text-slate-500 text-sm mt-1">
+                  Deleting <span className="font-medium text-slate-700">"{deleteModal.name}"</span>
                 </p>
               </div>
-            )}
-          </div>
-          
-          <div className="md:col-span-3 flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setShowEditForm(false)}
-              className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium"
-              disabled={loading}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2.5 bg-gradient-to-r from-green-600 to-green-700 rounded-lg text-white hover:from-green-700 hover:to-green-800 transition-all flex items-center gap-1.5 text-sm font-medium disabled:opacity-70 disabled:cursor-not-allowed shadow-sm"
-              disabled={loading}
-            >
-              {loading ? (
-                <>
-                  <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                  Processing...
-                </>
-              ) : (
-                <>
-                  <Pencil size={16} />
-                  Save Changes
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    )
+            </div>
 
-    return (
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        {renderView()}
-        
-        {/* Delete Confirmation Modal */}
-        {showDeleteModal && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200 p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 overflow-hidden animate-in zoom-in-95 duration-200">
-              <div className="p-5 bg-gradient-to-r from-red-50 to-white border-b border-red-100">
-                <div className="flex items-start gap-4">
-                  <div className="p-2 bg-red-100 rounded-full flex-shrink-0">
-                    <AlertTriangle size={20} className="text-red-600" />
+            {depLoading ? (
+              <div className="flex items-center gap-2 text-slate-400 text-sm py-4 justify-center">
+                <Loader2 size={16} className="animate-spin" /> Checking product dependencies...
+              </div>
+            ) : depInfo ? (
+              depInfo.affectedCount === 0 ? (
+                <div className="bg-green-50 border border-green-100 rounded-lg p-3 text-sm text-green-700 flex items-center gap-2 mb-4">
+                  <PackageSearch size={16} className="text-green-500" /> No products use this
+                  category. Safe to delete.
+                </div>
+              ) : (
+                <div className="mb-4 space-y-3">
+                  <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-800">
+                    <p className="font-medium mb-1 flex items-center gap-1.5">
+                      <PackageSearch size={15} /> {depInfo.affectedCount} product(s) use this
+                      category:
+                    </p>
+                    <ul className="list-disc list-inside text-xs text-amber-700 space-y-0.5 max-h-24 overflow-y-auto">
+                      {depInfo.affectedProducts.map((p) => (
+                        <li key={p.id}>
+                          {p.name} <span className="text-amber-500">({p.scope})</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-lg">Delete Category</h3>
-                    <p className="text-slate-600 text-sm mt-1">
-                      Are you sure you want to delete the category <span className="font-semibold text-slate-800">"{selectedCategory?.name}"</span>?
-                      {selectedCategory?.productCount > 0 && (
-                        <span className="text-red-600 font-medium"> This will affect {selectedCategory.productCount} products.</span>
+                  <p className="text-sm font-medium text-slate-700">
+                    What should happen to these products?
+                  </p>
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeleteProducts(false)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg border text-sm text-left transition-colors ${!deleteProducts ? 'border-blue-400 bg-blue-50 text-blue-800' : 'border-slate-200 hover:bg-slate-50 text-slate-700'}`}
+                    >
+                      {!deleteProducts ? (
+                        <CheckSquare size={18} className="text-blue-500 flex-shrink-0" />
+                      ) : (
+                        <Square size={18} className="text-slate-400 flex-shrink-0" />
                       )}
-                    </p>
+                      <div>
+                        <p className="font-medium">Only delete category</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Products remain but lose this category tag
+                        </p>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteProducts(true)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-lg border text-sm text-left transition-colors ${deleteProducts ? 'border-red-400 bg-red-50 text-red-800' : 'border-slate-200 hover:bg-slate-50 text-slate-700'}`}
+                    >
+                      {deleteProducts ? (
+                        <CheckSquare size={18} className="text-red-500 flex-shrink-0" />
+                      ) : (
+                        <Square size={18} className="text-slate-400 flex-shrink-0" />
+                      )}
+                      <div>
+                        <p className="font-medium">
+                          Delete category AND all {depInfo.affectedCount} product(s)
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Permanently removes both the category and products
+                        </p>
+                      </div>
+                    </button>
                   </div>
                 </div>
-              </div>
-              
-              <div className="p-5">
-                {selectedCategory?.productCount > 0 && (
-                  <div className="mb-4 bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-800">
-                    <p className="flex items-start gap-2">
-                      <AlertTriangle size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                      <span>
-                        Products in this category may become harder to find if the category is deleted. Consider 
-                        reassigning products to another category before deletion.
-                      </span>
-                    </p>
-                  </div>
+              )
+            ) : null}
+
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                onClick={closeDelete}
+                disabled={deleting}
+                className="px-4 py-2.5 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting || depLoading}
+                className={`px-5 py-2.5 rounded-lg text-white text-sm font-medium flex items-center gap-2 disabled:opacity-60 transition-colors ${deleteProducts ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'}`}
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" /> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />{' '}
+                    {deleteProducts ? 'Delete Category + Products' : 'Delete Category Only'}
+                  </>
                 )}
-                
-                <div className="flex justify-end gap-3 mt-2">
-                  <button
-                    onClick={() => setShowDeleteModal(false)}
-                    className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors text-sm font-medium"
-                    disabled={loading}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleDeleteCategory}
-                    className="px-4 py-2.5 bg-gradient-to-r from-red-500 to-red-600 rounded-lg text-white hover:from-red-600 hover:to-red-700 transition-all flex items-center gap-1.5 text-sm font-medium disabled:opacity-70 disabled:cursor-not-allowed shadow-sm"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <>
-                        <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 size={16} />
-                        Delete Category
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+              </button>
             </div>
           </div>
-        )}
-        
-        <style jsx>{`
-          @keyframes fadeIn {
-              from { opacity: 0; }
-              to { opacity: 1; }
-          }
-          
-          @keyframes slideInRight {
-              from { transform: translateX(25%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-          }
-          
-          @keyframes zoomIn {
-              from { transform: scale(0.95); opacity: 0; }
-              to { transform: scale(1); opacity: 1; }
-          }
-          
-          .animate-in {
-              animation-duration: 300ms;
-              animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-              animation-fill-mode: both;
-          }
-          
-          .fade-in { animation-name: fadeIn; }
-          .slide-in-from-right-1\\/4 { animation-name: slideInRight; }
-          .zoom-in-95 { animation-name: zoomIn; }
-          .duration-200 { animation-duration: 200ms; }
-          .duration-300 { animation-duration: 300ms; }
-          
-          .line-clamp-2 {
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-          }
-        `}</style>
-      </div>
-    )
+        </div>
+      )}
+    </div>
+  );
 }

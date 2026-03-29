@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\LatestProducts.jsx
 'use client'
 import React from 'react'
 import Title from './Title'

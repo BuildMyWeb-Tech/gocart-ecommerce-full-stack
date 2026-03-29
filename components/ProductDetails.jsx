@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\ProductDetails.jsx
 'use client';
 import {
   StarIcon,
@@ -33,7 +34,6 @@ const ProductDetails = ({ product }) => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const imageContainerRef = useRef(null);
 
-  // Available stock from DB
   const availableStock = product.quantity ?? product.stock ?? 0;
 
   const averageRating =
@@ -46,7 +46,6 @@ const ProductDetails = ({ product }) => {
       ? Math.round(((product.mrp - product.price) / product.mrp) * 100)
       : 0;
 
-  // Multiple categories display: ["Electronics","Accessories"] → "Electronics + Accessories"
   const categoryDisplay = Array.isArray(product.category)
     ? product.category.join(' + ')
     : product.category || '';
@@ -55,7 +54,6 @@ const ProductDetails = ({ product }) => {
     if (itemInCart) setQuantity(itemInCart.quantity);
   }, [itemInCart]);
 
-  // ── Quantity handlers with stock cap ─────────────────────────────
   const increaseQty = () => {
     if (quantity >= availableStock) {
       toast.error(`Only ${availableStock} item${availableStock !== 1 ? 's' : ''} available`, {
@@ -69,7 +67,6 @@ const ProductDetails = ({ product }) => {
 
   const decreaseQty = () => setQuantity((prev) => Math.max(1, prev - 1));
 
-  // ── Add to cart ───────────────────────────────────────────────────
   const addToCartHandler = () => {
     if (availableStock === 0) {
       toast.error('This product is out of stock');
@@ -86,6 +83,7 @@ const ProductDetails = ({ product }) => {
           quantity,
           category: categoryDisplay,
           stock: availableStock,
+          storeId: product.storeId, // ✅ FIX: storeId saved into cart
         },
       })
     );
@@ -96,7 +94,6 @@ const ProductDetails = ({ product }) => {
     });
   };
 
-  // ── Image zoom ────────────────────────────────────────────────────
   const handleImageMouseMove = (e) => {
     if (!imageContainerRef.current) return;
     const { left, top, width, height } = imageContainerRef.current.getBoundingClientRect();
@@ -109,7 +106,7 @@ const ProductDetails = ({ product }) => {
   return (
     <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
       <div className="flex max-lg:flex-col gap-6 lg:gap-12 p-6 lg:p-8">
-        {/* ── Images ─────────────────────────────────────────────── */}
+        {/* Images */}
         <div className="flex max-sm:flex-col-reverse gap-4 md:gap-6 lg:w-[45%]">
           <div className="flex sm:flex-col gap-3 sm:min-w-24">
             {product.images.map((image, index) => (
@@ -173,20 +170,16 @@ const ProductDetails = ({ product }) => {
           </div>
         </div>
 
-        {/* ── Info ───────────────────────────────────────────────── */}
+        {/* Info */}
         <div className="flex-1">
-          {/* Name */}
           <h1 className="text-2xl md:text-3xl font-bold text-slate-800 mb-3">{product.name}</h1>
 
-          {/* Categories + Rating */}
           <div className="flex flex-wrap items-center gap-4 mb-5">
-            {/* Multiple categories: "Electronics + Accessories" */}
             {categoryDisplay && (
               <span className="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-700 px-3 py-1 rounded-full font-medium">
                 {categoryDisplay}
               </span>
             )}
-
             <div className="flex items-center gap-3">
               <div className="flex">
                 {Array(5)
@@ -207,7 +200,6 @@ const ProductDetails = ({ product }) => {
             </div>
           </div>
 
-          {/* Price */}
           <div className="flex items-center gap-4 mb-5">
             <div className="flex flex-col">
               <p className="text-3xl font-bold text-slate-800">
@@ -224,18 +216,13 @@ const ProductDetails = ({ product }) => {
                 </div>
               )}
             </div>
-
-            {/* Stock badge — shows exact count from DB */}
             <div
-              className={`ml-auto px-3 py-1.5 rounded-full text-sm font-medium ${
-                availableStock > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-              }`}
+              className={`ml-auto px-3 py-1.5 rounded-full text-sm font-medium ${availableStock > 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}
             >
               {availableStock > 0 ? `In Stock (${availableStock})` : 'Out of Stock'}
             </div>
           </div>
 
-          {/* Description (short) */}
           <div className="mb-6">
             <h3 className="font-semibold text-slate-800 mb-2">Description</h3>
             <p className="text-slate-600 leading-relaxed">
@@ -245,7 +232,7 @@ const ProductDetails = ({ product }) => {
             </p>
           </div>
 
-          {/* Key Features (dynamic array from DB) */}
+          {/* Key Features */}
           {Array.isArray(product.keyFeatures) && product.keyFeatures.length > 0 && (
             <div className="mb-6 bg-slate-50 p-4 rounded-xl">
               <h3 className="text-sm font-semibold text-slate-700 mb-3">Key Features</h3>
@@ -262,7 +249,7 @@ const ProductDetails = ({ product }) => {
             </div>
           )}
 
-          {/* Quantity selector — capped at availableStock */}
+          {/* Quantity */}
           <div className="mb-6">
             <p className="text-sm text-slate-700 mb-2 font-medium">
               Quantity
@@ -291,8 +278,6 @@ const ProductDetails = ({ product }) => {
                 +
               </button>
             </div>
-
-            {/* Warning if at max */}
             {quantity >= availableStock && availableStock > 0 && (
               <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
                 <X size={12} />
@@ -307,22 +292,17 @@ const ProductDetails = ({ product }) => {
               onClick={() => (itemInCart ? router.push('/cart') : addToCartHandler())}
               disabled={availableStock === 0}
               className={`flex-1 flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-medium shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed
-                ${
-                  itemInCart
-                    ? 'bg-green-600 hover:bg-green-700 text-white'
-                    : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'
-                }`}
+                ${itemInCart ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white'}`}
             >
               <ShoppingCartIcon size={18} />
               {availableStock === 0 ? 'Out of Stock' : itemInCart ? 'View Cart' : 'Add to Cart'}
             </button>
-
             <button className="px-4 py-3.5 rounded-xl font-medium bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100 transition-all">
               <ShareIcon size={20} />
             </button>
           </div>
 
-          {/* Quick delivery features */}
+          {/* Feature badges */}
           <div className="grid grid-cols-2 gap-3 mt-6">
             {[
               {

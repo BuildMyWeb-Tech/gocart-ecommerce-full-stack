@@ -157,7 +157,7 @@ export default function Orders() {
                             <table className="w-full max-w-5xl text-slate-500 table-auto">
                                 <thead className="bg-slate-50 text-slate-700 text-xs uppercase">
                                     <tr>
-                                        <th className="text-left px-6 py-4 font-semibold">Order & Date</th>
+                                        <th className="text-left px-6 py-4 font-semibold">Order Id & Date</th>
                                         <th className="text-left px-6 py-4 font-semibold">Product</th>
                                         <th className="text-left px-6 py-4 font-semibold">Total</th>
                                         <th className="text-left px-6 py-4 font-semibold">Status</th>

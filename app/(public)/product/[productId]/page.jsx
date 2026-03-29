@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\(public)\product\[productId]\page.jsx
 'use client';
 import ProductDescription from '@/components/ProductDescription';
 import ProductDetails from '@/components/ProductDetails';

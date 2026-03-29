@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\admin\page.jsx
 'use client'
 import { dummyAdminDashboardData } from "@/assets/assets"
 import Loading from "@/components/Loading"

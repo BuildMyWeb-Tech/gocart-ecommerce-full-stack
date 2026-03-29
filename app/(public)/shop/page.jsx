@@ -1,225 +1,535 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\store\page.jsx
 'use client';
-
-import { useState, useEffect } from 'react';
+import Loading from '@/components/Loading';
+import { useAuth } from '@clerk/nextjs';
 import axios from 'axios';
-import ProductCard from '@/components/ProductCard';
-import { Search, SlidersHorizontal, X, Loader2, PackageOpen, ChevronDown } from 'lucide-react';
+import {
+  IndianRupee,
+  ShoppingBasket,
+  Star,
+  Tags,
+  TrendingUp,
+  RefreshCcw,
+  Users,
+  ExternalLink,
+  ShoppingCart,
+  Clock,
+  Truck,
+  CheckCircle2,
+  XCircle,
+  Package,
+  Layers,
+  CheckCircle,
+} from 'lucide-react';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
-export default function ShopPage() {
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
+// ── Pie chart colours ────────────────────────────────────────────
+const PIE_COLORS = {
+  Delivered: '#22c55e',
+  Pending: '#f59e0b',
+  Processing: '#3b82f6',
+  Shipped: '#8b5cf6',
+  Cancelled: '#ef4444',
+};
+
+// ── Stat card component ──────────────────────────────────────────
+function StatCard({ title, value, icon: Icon, color }) {
+  const colorMap = {
+    blue: {
+      bg: 'bg-blue-50',
+      icon: 'bg-blue-100 text-blue-600',
+      border: 'border-blue-100',
+      val: 'text-blue-700',
+    },
+    green: {
+      bg: 'bg-green-50',
+      icon: 'bg-green-100 text-green-600',
+      border: 'border-green-100',
+      val: 'text-green-700',
+    },
+    purple: {
+      bg: 'bg-purple-50',
+      icon: 'bg-purple-100 text-purple-600',
+      border: 'border-purple-100',
+      val: 'text-purple-700',
+    },
+    amber: {
+      bg: 'bg-amber-50',
+      icon: 'bg-amber-100 text-amber-600',
+      border: 'border-amber-100',
+      val: 'text-amber-700',
+    },
+    red: {
+      bg: 'bg-red-50',
+      icon: 'bg-red-100 text-red-600',
+      border: 'border-red-100',
+      val: 'text-red-700',
+    },
+    indigo: {
+      bg: 'bg-indigo-50',
+      icon: 'bg-indigo-100 text-indigo-600',
+      border: 'border-indigo-100',
+      val: 'text-indigo-700',
+    },
+    slate: {
+      bg: 'bg-slate-50',
+      icon: 'bg-slate-100 text-slate-600',
+      border: 'border-slate-100',
+      val: 'text-slate-700',
+    },
+    teal: {
+      bg: 'bg-teal-50',
+      icon: 'bg-teal-100 text-teal-600',
+      border: 'border-teal-100',
+      val: 'text-teal-700',
+    },
+    orange: {
+      bg: 'bg-orange-50',
+      icon: 'bg-orange-100 text-orange-600',
+      border: 'border-orange-100',
+      val: 'text-orange-700',
+    },
+    pink: {
+      bg: 'bg-pink-50',
+      icon: 'bg-pink-100 text-pink-600',
+      border: 'border-pink-100',
+      val: 'text-pink-700',
+    },
+    sky: {
+      bg: 'bg-sky-50',
+      icon: 'bg-sky-100 text-sky-600',
+      border: 'border-sky-100',
+      val: 'text-sky-700',
+    },
+  };
+  const c = colorMap[color] || colorMap.slate;
+  return (
+    <div className={`rounded-xl border ${c.border} ${c.bg} p-5 flex items-center gap-4 shadow-sm`}>
+      <div className={`rounded-xl p-3 ${c.icon} flex-shrink-0`}>
+        <Icon size={22} />
+      </div>
+      <div>
+        <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{title}</p>
+        <p className={`text-2xl font-bold mt-0.5 ${c.val}`}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Custom tooltip for charts ────────────────────────────────────
+const RevenueTooltip = ({ active, payload, label }) => {
+  if (active && payload?.length) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs">
+        <p className="font-semibold text-slate-700 mb-1">{label}</p>
+        {payload.map((p, i) => (
+          <p key={i} style={{ color: p.color }}>
+            {p.name === 'revenue' ? `₹${p.value.toLocaleString()}` : `${p.value} orders`}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+// ── Main Dashboard ───────────────────────────────────────────────
+export default function Dashboard() {
+  const { getToken } = useAuth();
+  const router = useRouter();
+
   const [loading, setLoading] = useState(true);
+  const [chartTab, setChartTab] = useState('revenue'); // 'revenue' | 'orders'
+  const [dash, setDash] = useState({
+    totalProducts: 0,
+    totalOrders: 0,
+    totalCategories: 0,
+    totalCustomers: 0,
+    totalEarnings: 0,
+    revenue: 0,
+    pending: 0,
+    processing: 0,
+    shipped: 0,
+    delivered: 0,
+    cancelled: 0,
+    dailyData: [],
+    ratings: [],
+  });
 
-  // Filters
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [sortBy, setSortBy] = useState('newest');
-  const [showFilters, setShowFilters] = useState(false);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        // Fetch active products and categories in parallel
-        const [productsRes, categoriesRes] = await Promise.all([
-          axios.get('/api/products'),
-          axios.get('/api/admin/categories'),
-        ]);
-        setProducts(productsRes.data.products || []);
-        setCategories(categoriesRes.data.categories || []);
-      } catch (error) {
-        console.error('Failed to fetch shop data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
-
-  // Filter & sort logic (client-side)
-  const filtered = products
-    .filter((p) => {
-      const matchesSearch =
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.description?.toLowerCase().includes(search.toLowerCase());
-
-      const matchesCategory =
-        selectedCategory === 'All' ||
-        (Array.isArray(p.category)
-          ? p.category.includes(selectedCategory)
-          : p.category === selectedCategory);
-
-      return matchesSearch && matchesCategory;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
-      if (sortBy === 'price_asc') return a.price - b.price;
-      if (sortBy === 'price_desc') return b.price - a.price;
-      if (sortBy === 'discount') {
-        const discA = a.mrp ? (a.mrp - a.price) / a.mrp : 0;
-        const discB = b.mrp ? (b.mrp - b.price) / b.mrp : 0;
-        return discB - discA;
-      }
-      return 0;
-    });
-
-  const clearFilters = () => {
-    setSearch('');
-    setSelectedCategory('All');
-    setSortBy('newest');
+  const fetchDashboardData = async () => {
+    setLoading(true);
+    try {
+      const token = await getToken();
+      const { data } = await axios.get('/api/store/dashboard', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setDash(data.dashboardData);
+    } catch (error) {
+      toast.error(error?.response?.data?.error || error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const hasActiveFilters = search || selectedCategory !== 'All' || sortBy !== 'newest';
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  if (loading) return <Loading />;
+
+  // ── Derived values ─────────────────────────────────────────────
+  const avgRating = dash.ratings.length
+    ? (dash.ratings.reduce((s, r) => s + r.rating, 0) / dash.ratings.length).toFixed(1)
+    : '—';
+
+  const conversionRate =
+    dash.totalOrders > 0 ? ((dash.delivered / dash.totalOrders) * 100).toFixed(1) : '0.0';
+
+  // Pie chart data
+  const pieData = [
+    { name: 'Delivered', value: dash.delivered },
+    { name: 'Pending', value: dash.pending },
+    { name: 'Processing', value: dash.processing },
+    { name: 'Shipped', value: dash.shipped },
+    { name: 'Cancelled', value: dash.cancelled },
+  ].filter((d) => d.value > 0);
+
+  // Bar chart: order status breakdown
+  const barData = [
+    { status: 'Pending', count: dash.pending },
+    { status: 'Processing', count: dash.processing },
+    { status: 'Shipped', count: dash.shipped },
+    { status: 'Delivered', count: dash.delivered },
+    { status: 'Cancelled', count: dash.cancelled },
+  ];
+
+  // Show last 14 days on chart to avoid crowding
+  const chartData = dash.dailyData.slice(-14);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Page Header */}
-      <div className="bg-white border-b border-slate-100 py-8 px-4">
-        <div className="max-w-7xl mx-auto">
-          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-800">Shop</h1>
-          <p className="text-slate-500 text-sm mt-1">
-            {loading
-              ? 'Loading products...'
-              : `${filtered.length} product${filtered.length !== 1 ? 's' : ''} available`}
+    <div className="text-slate-600 pb-28 space-y-8">
+      {/* ── Header ─────────────────────────────────────────── */}
+      <div className="flex flex-wrap justify-between items-center gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Seller Dashboard</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Real-time overview of your store performance
           </p>
         </div>
+        <button
+          onClick={fetchDashboardData}
+          className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-lg text-slate-700 text-sm transition-all"
+        >
+          <RefreshCcw size={14} />
+          Refresh
+        </button>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 py-6">
-        {/* Search + Filter Bar */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          {/* Search */}
-          <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-slate-200"
-            />
-            {search && (
+      {/* ── Summary Cards (11 metrics) ──────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        <StatCard
+          title="Total Products"
+          value={dash.totalProducts}
+          icon={ShoppingBasket}
+          color="blue"
+        />
+        <StatCard
+          title="Total Categories"
+          value={dash.totalCategories}
+          icon={Layers}
+          color="indigo"
+        />
+        <StatCard
+          title="Total Orders"
+          value={dash.totalOrders}
+          icon={ShoppingCart}
+          color="purple"
+        />
+        <StatCard title="Total Customers" value={dash.totalCustomers} icon={Users} color="teal" />
+        <StatCard
+          title="Total Revenue"
+          value={`₹${dash.revenue.toLocaleString('en-IN')}`}
+          icon={IndianRupee}
+          color="green"
+        />
+        <StatCard title="Pending" value={dash.pending} icon={Clock} color="amber" />
+        <StatCard title="Processing" value={dash.processing} icon={Package} color="sky" />
+        <StatCard title="Shipped" value={dash.shipped} icon={Truck} color="orange" />
+        <StatCard title="Delivered" value={dash.delivered} icon={CheckCircle2} color="green" />
+        <StatCard title="Cancelled" value={dash.cancelled} icon={XCircle} color="red" />
+        <StatCard
+          title="Conversion Rate"
+          value={`${conversionRate}%`}
+          icon={TrendingUp}
+          color="pink"
+        />
+      </div>
+
+      {/* ── Charts Row ──────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Line / Bar Chart (2/3 width) */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <h3 className="font-semibold text-slate-800">Trends (Last 14 Days)</h3>
+            <div className="flex gap-2">
               <button
-                onClick={() => setSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                onClick={() => setChartTab('revenue')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  chartTab === 'revenue'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
               >
-                <X size={14} />
+                Revenue
               </button>
-            )}
+              <button
+                onClick={() => setChartTab('orders')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  chartTab === 'orders'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Orders
+              </button>
+            </div>
           </div>
 
-          {/* Sort */}
-          <div className="relative">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="appearance-none pl-3 pr-8 py-2.5 border border-slate-200 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-slate-200 text-slate-600 cursor-pointer"
-            >
-              <option value="newest">Newest First</option>
-              <option value="price_asc">Price: Low to High</option>
-              <option value="price_desc">Price: High to Low</option>
-              <option value="discount">Best Discount</option>
-            </select>
-            <ChevronDown
-              size={14}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-            />
-          </div>
-
-          {/* Filter toggle (mobile) */}
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors sm:hidden ${
-              showFilters
-                ? 'bg-slate-800 text-white border-slate-800'
-                : 'bg-white text-slate-600 border-slate-200'
-            }`}
-          >
-            <SlidersHorizontal size={15} />
-            Filters
-          </button>
-
-          {/* Clear filters */}
-          {hasActiveFilters && (
-            <button
-              onClick={clearFilters}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-red-200 text-red-600 bg-red-50 text-sm hover:bg-red-100 transition-colors"
-            >
-              <X size={14} />
-              Clear
-            </button>
+          {chartData.length === 0 ? (
+            <div className="h-60 flex items-center justify-center text-slate-400 text-sm">
+              No data for the last 14 days
+            </div>
+          ) : chartTab === 'revenue' ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₹${v}`} />
+                <Tooltip content={<RevenueTooltip />} />
+                <Line
+                  type="monotone"
+                  dataKey="revenue"
+                  name="revenue"
+                  stroke="#22c55e"
+                  strokeWidth={2.5}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                <Tooltip content={<RevenueTooltip />} />
+                <Bar dataKey="orders" name="orders" fill="#6366f1" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           )}
         </div>
 
-        <div className="flex gap-6">
-          {/* Category Sidebar */}
-          <aside className={`${showFilters ? 'block' : 'hidden'} sm:block w-52 flex-shrink-0`}>
-            <div className="bg-white rounded-xl border border-slate-100 p-4 sticky top-4">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                Categories
-              </p>
-              <ul className="space-y-1">
-                <li>
-                  <button
-                    onClick={() => setSelectedCategory('All')}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                      selectedCategory === 'All'
-                        ? 'bg-slate-800 text-white font-medium'
-                        : 'text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    All Products
-                  </button>
-                </li>
-                {categories.map((cat) => (
-                  <li key={cat.id}>
-                    <button
-                      onClick={() => setSelectedCategory(cat.name)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                        selectedCategory === cat.name
-                          ? 'bg-slate-800 text-white font-medium'
-                          : 'text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      {cat.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+        {/* Pie Chart (1/3 width) */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+          <h3 className="font-semibold text-slate-800 mb-5">Order Distribution</h3>
+          {pieData.length === 0 ? (
+            <div className="h-48 flex items-center justify-center text-slate-400 text-sm">
+              No orders yet
             </div>
-          </aside>
-
-          {/* Products Grid */}
-          <div className="flex-1">
-            {loading ? (
-              <div className="flex items-center justify-center py-24 gap-2 text-slate-400">
-                <Loader2 size={22} className="animate-spin" />
-                <span>Loading products...</span>
-              </div>
-            ) : filtered.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-                <PackageOpen size={48} className="mb-3 text-slate-300" />
-                <p className="text-lg font-medium text-slate-600">No products found</p>
-                <p className="text-sm mt-1">
-                  {hasActiveFilters ? 'Try adjusting your filters' : 'No products available yet'}
-                </p>
-                {hasActiveFilters && (
-                  <button
-                    onClick={clearFilters}
-                    className="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg text-sm hover:bg-slate-700 transition-colors"
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={45}
+                    outerRadius={75}
+                    paddingAngle={3}
+                    dataKey="value"
                   >
-                    Clear Filters
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filtered.map((product) => (
-                  <ProductCard key={product.id} product={product} />
+                    {pieData.map((entry) => (
+                      <Cell key={entry.name} fill={PIE_COLORS[entry.name]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v, n) => [`${v} orders`, n]} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="mt-3 space-y-1.5">
+                {pieData.map((entry) => (
+                  <div key={entry.name} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{ background: PIE_COLORS[entry.name] }}
+                      />
+                      <span className="text-slate-600">{entry.name}</span>
+                    </div>
+                    <span className="font-semibold text-slate-700">{entry.value}</span>
+                  </div>
                 ))}
               </div>
-            )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Order Status Bar Chart ───────────────────────────── */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h3 className="font-semibold text-slate-800 mb-5">Orders by Status</h3>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={barData} margin={{ left: -10 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <XAxis dataKey="status" tick={{ fontSize: 12 }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+            <Tooltip />
+            <Bar dataKey="count" name="Orders" radius={[6, 6, 0, 0]}>
+              {barData.map((entry) => (
+                <Cell key={entry.status} fill={PIE_COLORS[entry.status] || '#94a3b8'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── Quick Stats Row ─────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center gap-4">
+          <div className="bg-amber-100 rounded-xl p-3">
+            <Star size={20} className="text-amber-500" />
           </div>
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Avg. Rating</p>
+            <p className="text-2xl font-bold text-slate-800">{avgRating}</p>
+            <p className="text-xs text-slate-400">{dash.ratings.length} reviews</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center gap-4">
+          <div className="bg-green-100 rounded-xl p-3">
+            <IndianRupee size={20} className="text-green-500" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Total Earnings</p>
+            <p className="text-2xl font-bold text-slate-800">
+              ₹{dash.totalEarnings.toLocaleString('en-IN')}
+            </p>
+            <p className="text-xs text-slate-400">All orders combined</p>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center gap-4">
+          <div className="bg-blue-100 rounded-xl p-3">
+            <TrendingUp size={20} className="text-blue-500" />
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Delivery Rate</p>
+            <p className="text-2xl font-bold text-slate-800">{conversionRate}%</p>
+            <p className="text-xs text-slate-400">Delivered / Total orders</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Recent Reviews ───────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex justify-between items-center p-5 border-b border-slate-100">
+          <h2 className="text-lg font-semibold text-slate-800">Recent Customer Reviews</h2>
+          <span className="bg-green-100 text-green-700 text-xs font-medium px-2.5 py-1 rounded-full">
+            {dash.ratings.length} total
+          </span>
+        </div>
+
+        <div className="divide-y divide-slate-100">
+          {dash.ratings.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="bg-slate-100 p-4 rounded-full mb-3">
+                <Star size={24} className="text-slate-400" />
+              </div>
+              <h3 className="text-slate-700 font-medium mb-1">No reviews yet</h3>
+              <p className="text-slate-500 text-sm max-w-md">
+                When customers leave reviews, they'll appear here
+              </p>
+            </div>
+          ) : (
+            dash.ratings.slice(0, 5).map((review, index) => (
+              <div key={index} className="p-5 hover:bg-slate-50 transition-colors">
+                <div className="flex max-sm:flex-col gap-5 sm:items-start justify-between text-sm text-slate-600 max-w-4xl">
+                  <div className="flex-1">
+                    <div className="flex gap-3 items-center">
+                      <div className="relative">
+                        <Image
+                          src={review.user.image}
+                          alt={review.user.name || 'User'}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                          width={40}
+                          height={40}
+                        />
+                        <div className="absolute -bottom-1 -right-1 bg-green-500 rounded-full p-0.5 border-2 border-white">
+                          <CheckCircle size={10} className="text-white" />
+                        </div>
+                      </div>
+                      <div>
+                        <p className="font-medium text-slate-800">{review.user.name}</p>
+                        <p className="text-xs text-slate-500">
+                          {new Date(review.createdAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center mt-2 mb-3">
+                      {Array(5)
+                        .fill('')
+                        .map((_, i) => (
+                          <Star
+                            key={i}
+                            size={14}
+                            className="text-transparent"
+                            fill={review.rating >= i + 1 ? '#FBBF24' : '#D1D5DB'}
+                          />
+                        ))}
+                    </div>
+                    <p className="text-slate-700 leading-relaxed">{review.review}</p>
+                  </div>
+
+                  <div className="sm:ml-4 sm:w-56 flex-shrink-0 sm:border-l sm:border-slate-200 sm:pl-4">
+                    <div className="inline-block bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full mb-2">
+                      {Array.isArray(review.product?.category)
+                        ? review.product.category[0]
+                        : review.product?.category || 'Uncategorized'}
+                    </div>
+                    <p className="font-medium text-slate-800 text-sm">{review.product?.name}</p>
+                    <button
+                      onClick={() => router.push(`/product/${review.product.id}`)}
+                      className="mt-3 flex items-center justify-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-lg transition-all w-full text-xs"
+                    >
+                      View Product <ExternalLink size={12} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

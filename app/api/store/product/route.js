@@ -1,18 +1,16 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\api\store\product\route.js
 import imagekit from '@/configs/imageKit';
 import prisma from '@/lib/prisma';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-// ── POST: Add a new product ───────────────────────────────────────────────────
+// ── POST: Store creates a product ─────────────────────────────────
 export async function POST(request) {
   try {
     const { userId } = getAuth(request);
     const storeId = await authSeller(userId);
-
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
-    }
+    if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
     const formData = await request.formData();
     const name = formData.get('name');
@@ -21,14 +19,14 @@ export async function POST(request) {
     const price = Number(formData.get('price'));
     const quantity = Number(formData.get('quantity'));
     const categoryRaw = formData.get('category');
-    const keyFeaturesRaw = formData.get('keyFeatures'); // JSON string array
+    const keyFeaturesRaw = formData.get('keyFeatures');
     const images = formData.getAll('images');
 
     if (!name || !description || !mrp || !price || !categoryRaw || images.length < 1) {
       return NextResponse.json({ error: 'Missing product details' }, { status: 400 });
     }
 
-    let category;
+    let category = [];
     try {
       category = JSON.parse(categoryRaw);
       if (!Array.isArray(category) || category.length === 0) throw new Error();
@@ -36,7 +34,6 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Invalid category format' }, { status: 400 });
     }
 
-    // Parse keyFeatures — optional, default to empty array
     let keyFeatures = [];
     if (keyFeaturesRaw) {
       try {
@@ -46,10 +43,8 @@ export async function POST(request) {
         keyFeatures = [];
       }
     }
-    // Remove empty strings
     keyFeatures = keyFeatures.filter((f) => typeof f === 'string' && f.trim() !== '');
 
-    // Upload images to ImageKit
     const imagesUrl = await Promise.all(
       images.map(async (image) => {
         const buffer = Buffer.from(await image.arrayBuffer());
@@ -76,7 +71,8 @@ export async function POST(request) {
         keyFeatures,
         images: imagesUrl,
         inStock: (quantity || 0) > 0,
-        storeId,
+        storeId, // always set for store products
+        createdBy: 'STORE',
       },
     });
 
@@ -87,17 +83,25 @@ export async function POST(request) {
   }
 }
 
-// ── GET: Fetch all products for a seller ─────────────────────────────────────
+// ── GET: Store fetches their own products only ────────────────────
+// Store dashboard should only show their own products
+// The merged view (admin + store) is served by /api/products
 export async function GET(request) {
   try {
     const { userId } = getAuth(request);
     const storeId = await authSeller(userId);
+    if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
-    }
+    const products = await prisma.product.findMany({
+      where: { storeId }, // only their own
+      include: {
+        rating: {
+          select: { id: true, rating: true, review: true, userId: true, createdAt: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
-    const products = await prisma.product.findMany({ where: { storeId } });
     return NextResponse.json({ products });
   } catch (error) {
     console.error(error);
@@ -105,26 +109,20 @@ export async function GET(request) {
   }
 }
 
-// ── PUT: Update an existing product (?id=xxx) ────────────────────────────────
+// ── PUT: Store updates their own product only ─────────────────────
 export async function PUT(request) {
   try {
     const { userId } = getAuth(request);
     const storeId = await authSeller(userId);
-
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
-    }
+    if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get('id');
-    if (!productId) {
-      return NextResponse.json({ error: 'Product ID required' }, { status: 400 });
-    }
+    if (!productId) return NextResponse.json({ error: 'Product ID required' }, { status: 400 });
 
+    // Must belong to THIS store
     const existing = await prisma.product.findFirst({ where: { id: productId, storeId } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Product not found' }, { status: 404 });
-    }
+    if (!existing) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
 
     const body = await request.json();
     const { name, description, mrp, price, quantity, category, existingImages, keyFeatures } = body;
@@ -143,7 +141,6 @@ export async function PUT(request) {
     const images =
       Array.isArray(existingImages) && existingImages.length > 0 ? existingImages : existing.images;
 
-    // Clean keyFeatures
     const cleanKeyFeatures = Array.isArray(keyFeatures)
       ? keyFeatures.filter((f) => typeof f === 'string' && f.trim() !== '')
       : existing.keyFeatures || [];
@@ -170,26 +167,19 @@ export async function PUT(request) {
   }
 }
 
-// ── DELETE: Remove a product (?id=xxx) ───────────────────────────────────────
+// ── DELETE: Store deletes their own product only ──────────────────
 export async function DELETE(request) {
   try {
     const { userId } = getAuth(request);
     const storeId = await authSeller(userId);
-
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
-    }
+    if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get('id');
-    if (!productId) {
-      return NextResponse.json({ error: 'Product ID required' }, { status: 400 });
-    }
+    if (!productId) return NextResponse.json({ error: 'Product ID required' }, { status: 400 });
 
     const existing = await prisma.product.findFirst({ where: { id: productId, storeId } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Product not found' }, { status: 404 });
-    }
+    if (!existing) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
 
     await prisma.product.delete({ where: { id: productId } });
     return NextResponse.json({ message: 'Product deleted successfully' });

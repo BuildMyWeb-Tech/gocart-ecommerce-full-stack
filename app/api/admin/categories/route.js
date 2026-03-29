@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\api\admin\categories\route.js
 import imagekit from '@/configs/imageKit';
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
