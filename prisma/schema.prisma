@@ -178,5 +178,29 @@ model Store {
     Product    Product[]
     Order      Order[]
     Category   Category[]
+    Sale       Sale[]   // ✅ ADD THIS LINE
     user       User      @relation(fields: [userId], references: [id])
+}
+
+enum SaleSource {
+    ORDER    // from ecommerce order
+    BILLING  // from POS billing (future)
+}
+
+model Sale {
+    id          String     @id @default(cuid())
+    storeId     String
+    amount      Float
+    source      SaleSource @default(ORDER)
+    referenceId String     // orderId or billingId
+    createdAt   DateTime   @default(now())
+
+    store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+    // ── Performance indexes for large datasets ────────────────────
+    @@index([storeId])
+    @@index([createdAt])
+    @@index([storeId, createdAt])   // compound — most queries filter both
+    @@index([source])
+    @@index([referenceId])
 }
