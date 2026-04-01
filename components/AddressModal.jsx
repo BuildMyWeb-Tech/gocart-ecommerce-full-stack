@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\AddressModal.jsx
 'use client'
 import { addAddress } from "@/lib/features/address/addressSlice"
 import { useAuth } from "@clerk/nextjs"
@@ -31,18 +32,21 @@ const AddressModal = ({ setShowAddressModal }) => {
     }
 
     const handleSubmit = async (e) => {
-        e.preventDefault()
-        try {
-            const token = await getToken()
-            const { data } = await axios.post('/api/address', {address}, {headers: { Authorization: `Bearer ${token}` } })
-            dispatch(addAddress(data.newAddress))
-            toast.success(data.message)
-            setShowAddressModal(false)
-        } catch (error) {
-            console.log(error)
-            toast.error(error?.response?.data?.message || error.message)
-        }
+    e.preventDefault();
+    try {
+        const token = await getToken();
+        // ✅ Send address fields flat, not nested under { address }
+        const { data } = await axios.post('/api/address', address, {
+        headers: { Authorization: `Bearer ${token}` },
+        });
+        dispatch(addAddress(data.newAddress));
+        toast.success(data.message);
+        setShowAddressModal(false);
+    } catch (error) {
+        console.log(error);
+        toast.error(error?.response?.data?.message || error.message);
     }
+    };
 
     return (
         <form onSubmit={e => toast.promise(handleSubmit(e), { loading: 'Adding Address...' })} className="fixed inset-0 z-50 bg-white/60 backdrop-blur h-screen flex items-center justify-center">

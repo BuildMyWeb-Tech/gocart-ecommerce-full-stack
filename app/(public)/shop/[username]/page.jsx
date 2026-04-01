@@ -180,13 +180,13 @@ export default function StoreShop() {
                 </div>
                 
                 {filteredProducts.length > 0 ? (
-                    <div className="mt-6 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6 xl:gap-8 mx-auto">
+                    <div className="mt-6 grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6 xl:gap-8 mx-auto">
                         {filteredProducts.map((product) => <ProductCard key={product.id} product={product} />)}
                     </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center py-16 text-center">
                         <div className="bg-slate-100 p-6 rounded-full mb-6 shadow-inner">
-                            <MapPinIcon className="w-10 h-10 text-slate-400" />
+                            <Package className="w-10 h-10 text-slate-400" />
                         </div>
                         <h3 className="text-lg font-medium text-slate-800 mb-2">No products found</h3>
                         <p className="text-sm text-slate-500 max-w-md mb-6">

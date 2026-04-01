@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\BestSelling.jsx
 'use client'
 import Title from './Title'
 import ProductCard from './ProductCard'

@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\OrdersAreaChart.jsx
 'use client'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 

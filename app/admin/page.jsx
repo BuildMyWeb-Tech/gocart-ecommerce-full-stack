@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\admin\page.jsx
 'use client'
 import { dummyAdminDashboardData } from "@/assets/assets"
 import Loading from "@/components/Loading"
@@ -5,7 +6,7 @@ import OrdersAreaChart from "@/components/OrdersAreaChart"
 import { useAuth } from "@clerk/nextjs"
 import axios from "axios"
 import { 
-  CircleDollarSignIcon, 
+  IndianRupee , 
   ShoppingBasketIcon, 
   StoreIcon, 
   TagsIcon, 
@@ -19,7 +20,7 @@ import toast from "react-hot-toast"
 
 export default function AdminDashboard() {
     const { getToken } = useAuth()
-    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '$'
+    const currency = process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || '₹'
     const [loading, setLoading] = useState(true)
     const [dashboardData, setDashboardData] = useState({
         products: 0,
@@ -31,7 +32,7 @@ export default function AdminDashboard() {
 
     const dashboardCardsData = [
         { title: 'Total Products', value: dashboardData.products, icon: ShoppingBasketIcon, color: 'bg-blue-50 text-blue-500' },
-        { title: 'Total Revenue', value: currency + dashboardData.revenue, icon: CircleDollarSignIcon, color: 'bg-green-50 text-green-500' },
+        { title: 'Total Revenue', value: '₹' + dashboardData.revenue, icon: IndianRupee , color: 'bg-green-50 text-green-500' },
         { title: 'Total Orders', value: dashboardData.orders, icon: TagsIcon, color: 'bg-purple-50 text-purple-500' },
         { title: 'Total Stores', value: dashboardData.stores, icon: StoreIcon, color: 'bg-amber-50 text-amber-500' },
     ]

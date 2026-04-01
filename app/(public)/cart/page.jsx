@@ -4,7 +4,8 @@ import { useSelector, useDispatch } from 'react-redux';
 import { 
     ShoppingCart, Trash2, Heart, ArrowRight, Plus, Minus, 
     ChevronLeft, CheckCircle, ShieldCheck, Truck, Bookmark, 
-    AlertTriangle, X, CreditCard, RefreshCw, Gift, Tag, Package
+    AlertTriangle, X, CreditCard, RefreshCw, Gift, Tag, Package,
+    Percent, Sparkles, TrendingDown
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -12,21 +13,60 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { removeFromCart, updateCartQuantity, clearCart } from '@/lib/features/cart/cartSlice';
 import { addToWishlist } from '@/lib/features/wishlist/wishlistSlice';
+import OrderSummary from '@/components/OrderSummary';
+import { useAuth } from '@clerk/nextjs';
+import axios from 'axios';
+
+
 
 const CartPage = () => {
     const cartItems = useSelector(state => state.cart.items || []);
     const cartTotal = useSelector(state => state.cart.totalPrice || 0);
     const [couponCode, setCouponCode] = useState('');
-    const [couponApplied, setCouponApplied] = useState(false);
-    const [discount, setDiscount] = useState(0);
+    const [appliedCoupon, setAppliedCoupon] = useState(null);
+    const [availableCoupons, setAvailableCoupons] = useState([]);
+    const [loadingCoupons, setLoadingCoupons] = useState(true);
     const [showConfirmation, setShowConfirmation] = useState(false);
     const [productToRemove, setProductToRemove] = useState(null);
     const dispatch = useDispatch();
+    const { getToken, isSignedIn } = useAuth();
     
-    const applyCoupon = () => {
-        if (couponCode.toUpperCase() === 'SAVE10') {
-            setDiscount(cartTotal * 0.1);
-            setCouponApplied(true);
+    // Fetch available public coupons
+    useEffect(() => {
+        const fetchPublicCoupons = async () => {
+            try {
+                setLoadingCoupons(true);
+                const { data } = await axios.get('/api/coupons/public');
+                setAvailableCoupons(data.coupons || []);
+            } catch (error) {
+                console.error('Error fetching coupons:', error);
+            } finally {
+                setLoadingCoupons(false);
+            }
+        };
+        
+        fetchPublicCoupons();
+    }, []);
+    
+    const applyCoupon = async () => {
+        if (!couponCode.trim()) {
+            toast.error('Please enter a coupon code');
+            return;
+        }
+        
+        if (!isSignedIn) {
+            toast.error('Please login to apply coupon');
+            return;
+        }
+        
+        try {
+            const token = await getToken();
+            const { data } = await axios.post('/api/coupon', 
+                { code: couponCode.trim() },
+                { headers: { Authorization: `Bearer ${token}` }}
+            );
+            
+            setAppliedCoupon(data.coupon);
             toast.success('Coupon applied successfully!', {
                 icon: '🎉',
                 style: {
@@ -35,8 +75,8 @@ const CartPage = () => {
                     color: '#fff',
                 }
             });
-        } else {
-            toast.error('Invalid coupon code', {
+        } catch (error) {
+            toast.error(error?.response?.data?.error || 'Invalid coupon code', {
                 icon: '⚠️',
                 style: {
                     borderRadius: '10px',
@@ -45,6 +85,19 @@ const CartPage = () => {
                 }
             });
         }
+    };
+    
+    const removeCoupon = () => {
+        setAppliedCoupon(null);
+        setCouponCode('');
+        toast.success('Coupon removed', {
+            icon: '🗑️',
+            style: {
+                borderRadius: '10px',
+                background: '#333',
+                color: '#fff',
+            }
+        });
     };
     
     const confirmRemoveFromCart = (product) => {
@@ -99,6 +152,7 @@ const CartPage = () => {
     
     // Calculate final amounts
     const subtotal = cartTotal;
+    const discount = appliedCoupon ? (subtotal * appliedCoupon.discount / 100) : 0;
     const shipping = 0; // Free shipping
     const tax = subtotal * 0.08;
     const totalAmount = subtotal + tax - discount;
@@ -176,7 +230,7 @@ const CartPage = () => {
                                         </div>
                                         <div>
                                             <h4 className="font-medium text-slate-800">{productToRemove.name}</h4>
-                                            <p className="text-sm text-slate-500">${productToRemove.price.toFixed(2)} × {productToRemove.quantity}</p>
+                                            <p className="text-sm text-slate-500">₹{productToRemove.price.toFixed(2)} × {productToRemove.quantity}</p>
                                         </div>
                                     </div>
                                     
@@ -278,7 +332,7 @@ const CartPage = () => {
                                         {/* Price */}
                                         <div className="col-span-2 md:text-center order-1 md:order-none">
                                             <span className="md:hidden text-sm text-slate-500 mr-2">Price: </span>
-                                            <span className="font-medium text-slate-800">${item.price.toFixed(2)}</span>
+                                            <span className="font-medium text-slate-800">₹{item.price.toFixed(2)}</span>
                                         </div>
                                         
                                         {/* Quantity */}
@@ -306,11 +360,11 @@ const CartPage = () => {
                                         {/* Total & Remove */}
                                         <div className="col-span-2 flex justify-between md:justify-end items-center gap-3 order-3 md:order-none">
                                             <span className="font-medium text-slate-800">
-                                                ${(item.price * item.quantity).toFixed(2)}
+                                                ₹{(item.price * item.quantity).toFixed(2)}
                                             </span>
                                             <button 
                                                 onClick={() => confirmRemoveFromCart(item)}
-                                                                                                className="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                                                className="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
                                                 aria-label="Remove item"
                                             >
                                                 <Trash2 size={18} />
@@ -321,103 +375,136 @@ const CartPage = () => {
                             </div>
                         </div>
                         
-                        {/* Coupon Code */}
+                        {/* Coupon Code Section */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mt-6">
                             <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                                 <Gift size={18} className="text-purple-500" />
                                 Apply Coupon Code
                             </h3>
-                            <div className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    placeholder="Enter coupon code" 
-                                    className="flex-1 p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-500 transition-all"
-                                    value={couponCode}
-                                    onChange={(e) => setCouponCode(e.target.value)}
-                                />
-                                <button 
-                                    className="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-5 rounded-lg transition-colors"
-                                    onClick={applyCoupon}
-                                    disabled={couponApplied}
+                            
+                            {/* Applied Coupon */}
+                            {appliedCoupon ? (
+                                <motion.div 
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="mb-4"
                                 >
-                                    Apply
-                                </button>
-                            </div>
-                                                        {couponApplied && (
-                                <div className="flex items-center gap-2 text-green-600 mt-3 bg-green-50 p-2 rounded-md">
-                                    <CheckCircle size={16} />
-                                    <span className="text-sm font-medium">Coupon applied successfully! You saved ${discount.toFixed(2)}</span>
-                                </div>
+                                    <div className="flex items-center justify-between p-4 bg-green-50 border border-green-200 rounded-lg">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-green-500/10 text-green-600 rounded-full p-2">
+                                                <CheckCircle size={20} />
+                                            </div>
+                                            <div>
+                                                <p className="font-semibold text-green-700 flex items-center gap-2">
+                                                    {appliedCoupon.code}
+                                                    <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded-full">
+                                                        {appliedCoupon.discount}% OFF
+                                                    </span>
+                                                </p>
+                                                <p className="text-sm text-green-600">{appliedCoupon.description}</p>
+                                                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                                                    <TrendingDown size={12} />
+                                                    You saved ₹{discount.toFixed(2)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button 
+                                            onClick={removeCoupon}
+                                            className="text-slate-500 hover:text-red-500 transition-colors p-2"
+                                        >
+                                            <X size={18} />
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <>
+                                    {/* Coupon Input */}
+                                    <div className="flex gap-2 mb-4">
+                                        <input 
+                                            type="text" 
+                                            placeholder="Enter coupon code" 
+                                            className="flex-1 p-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-500 transition-all uppercase"
+                                            value={couponCode}
+                                            onChange={(e) => setCouponCode(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && applyCoupon()}
+                                        />
+                                        <button 
+                                            className="bg-green-600 hover:bg-green-700 text-white font-medium py-2.5 px-5 rounded-lg transition-colors"
+                                            onClick={applyCoupon}
+                                        >
+                                            Apply
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Available Coupons */}
+                                    {!loadingCoupons && availableCoupons.length > 0 && (
+                                        <div className="border-t border-slate-200 pt-4">
+                                            <p className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
+                                                <Sparkles size={14} className="text-purple-500" />
+                                                Available Coupons
+                                            </p>
+                                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                {availableCoupons.map((coupon) => (
+                                                    <motion.div 
+                                                        key={coupon.code}
+                                                        whileHover={{ scale: 1.01 }}
+                                                        className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-green-300 hover:bg-green-50/30 transition-all cursor-pointer"
+                                                        onClick={() => {
+                                                            setCouponCode(coupon.code);
+                                                        }}
+                                                    >
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="font-semibold text-purple-600 text-sm">
+                                                                    {coupon.code}
+                                                                </span>
+                                                                <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                    <Percent size={10} />
+                                                                    {coupon.discount}% OFF
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xs text-slate-600">{coupon.description}</p>
+                                                            {coupon.forNewUser && (
+                                                                <span className="text-xs text-amber-600 flex items-center gap-1 mt-1">
+                                                                    <Sparkles size={10} />
+                                                                    New users only
+                                                                </span>
+                                                            )}
+                                                            {coupon.forMember && (
+                                                                <span className="text-xs text-blue-600 flex items-center gap-1 mt-1">
+                                                                    <ShieldCheck size={10} />
+                                                                    Members only
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <button 
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setCouponCode(coupon.code);
+                                                                applyCoupon();
+                                                            }}
+                                                            className="text-green-600 hover:text-green-700 font-medium text-sm px-3 py-1 border border-green-200 rounded-md hover:bg-green-50 transition-colors"
+                                                        >
+                                                            Apply
+                                                        </button>
+                                                    </motion.div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             )}
-                            <div className="mt-3 text-xs text-slate-500">
-                                <p>Try code <span className="font-semibold text-purple-600">SAVE10</span> for 10% off your order.</p>
-                            </div>
                         </div>
                     </div>
                     
-                    {/* Order Summary */}
+                    {/* Order Summary - Pass discount info */}
                     <div className="lg:col-span-1">
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sticky top-24">
-                            <h2 className="text-xl font-bold text-slate-800 mb-4">Order Summary</h2>
-                            
-                            <div className="space-y-3 mb-6">
-                                <div className="flex justify-between text-slate-600">
-                                    <span>Subtotal ({cartItems.length} items)</span>
-                                    <span className="font-medium">${subtotal.toFixed(2)}</span>
-                                </div>
-                                
-                                <div className="flex justify-between text-slate-600">
-                                    <span className="flex items-center gap-1">
-                                        <Truck size={14} className="text-green-500" />
-                                        Shipping
-                                    </span>
-                                    <span className="font-medium text-green-600">Free</span>
-                                </div>
-                                
-                                <div className="flex justify-between text-slate-600">
-                                    <span>Tax</span>
-                                    <span className="font-medium">${tax.toFixed(2)}</span>
-                                </div>
-                                
-                                {couponApplied && (
-                                    <div className="flex justify-between text-green-600">
-                                        <span className="flex items-center gap-1">
-                                            <Gift size={14} />
-                                            Discount
-                                        </span>
-                                        <span className="font-medium">-${discount.toFixed(2)}</span>
-                                    </div>
-                                )}
-                                
-                                <div className="border-t border-slate-200 pt-3 mt-3"></div>
-                                <div className="flex justify-between font-bold text-lg">
-                                    <span>Total</span>
-                                    <span className="text-green-600">${totalAmount.toFixed(2)}</span>
-                                </div>
-                            </div>
-                            
-                            <button className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-medium py-3 px-4 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2">
-                                <CreditCard size={18} />
-                                Proceed to Checkout
-                            </button>
-                            
-                            <div className="mt-6 space-y-3">
-                                <div className="flex items-center gap-2 text-sm text-slate-600">
-                                    <ShieldCheck size={16} className="text-green-600" />
-                                    <span>Secure payment</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-slate-600">
-                                    <Truck size={16} className="text-green-600" />
-                                    <span>Free shipping on orders over $50</span>
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-slate-600">
-                                    <RefreshCw size={16} className="text-green-600" />
-                                    <span>30-day returns policy</span>
-                                </div>
-                            </div>
-                            
-                            
-                        </div>
+                        <OrderSummary 
+                            totalPrice={cartTotal} 
+                            items={cartItems}
+                            appliedCoupon={appliedCoupon}
+                            discount={discount}
+                        />
                     </div>
                 </div>
                 
@@ -450,5 +537,6 @@ const CartPage = () => {
         </>
     );
 };
+
 
 export default CartPage;
