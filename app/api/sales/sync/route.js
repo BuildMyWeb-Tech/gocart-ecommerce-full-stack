@@ -1,29 +1,35 @@
 // app/api/sales/sync/route.js
 // ─────────────────────────────────────────────────────────────────────────────
-// SALES SYNC ENDPOINT
-// Call this after every order is placed/paid to write a Sale record.
-// The reporting system queries Sale — NOT Order — for all analytics.
+// POST /api/sales/sync  { orderId }   → create one Sale record for an order
+// GET  /api/sales/sync?secret=XXX     → bulk backfill ALL existing orders
 //
-// Usage: POST /api/sales/sync  { orderId }
-// Called from: your order creation / payment webhook handler
+// The Inngest function handles automatic sync going forward.
+// Use this endpoint to backfill existing orders once after deployment.
 // ─────────────────────────────────────────────────────────────────────────────
 import prisma from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 
+// ── POST: sync a single order → Sale ─────────────────────────────
 export async function POST(request) {
   try {
     const { orderId } = await request.json();
-    if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 });
+    if (!orderId) {
+      return NextResponse.json({ error: 'orderId required' }, { status: 400 });
+    }
 
-    // Avoid duplicate Sale records
+    // Idempotency — skip if already synced
     const existing = await prisma.sale.findFirst({ where: { referenceId: orderId } });
-    if (existing) return NextResponse.json({ message: 'already synced', sale: existing });
+    if (existing) {
+      return NextResponse.json({ message: 'already synced', sale: existing });
+    }
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
       select: { id: true, storeId: true, total: true, createdAt: true },
     });
-    if (!order) return NextResponse.json({ error: 'order not found' }, { status: 404 });
+    if (!order) {
+      return NextResponse.json({ error: 'order not found' }, { status: 404 });
+    }
 
     const sale = await prisma.sale.create({
       data: {
@@ -42,13 +48,10 @@ export async function POST(request) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BULK BACKFILL — call once to populate Sale from all existing Orders
-// GET /api/sales/sync
-// ─────────────────────────────────────────────────────────────────────────────
+// ── GET: bulk backfill all existing orders ────────────────────────
+// One-time use after deployment. Protect with SYNC_SECRET env var.
 export async function GET(request) {
   try {
-    // Admin only check via query param secret (simple guard for one-time use)
     const { searchParams } = new URL(request.url);
     if (searchParams.get('secret') !== process.env.SYNC_SECRET) {
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
@@ -58,7 +61,7 @@ export async function GET(request) {
       select: { id: true, storeId: true, total: true, createdAt: true },
     });
 
-    // Find already-synced referenceIds to skip
+    // Get already-synced referenceIds to skip duplicates
     const existingRefs = await prisma.sale
       .findMany({ select: { referenceId: true } })
       .then((s) => new Set(s.map((x) => x.referenceId)));

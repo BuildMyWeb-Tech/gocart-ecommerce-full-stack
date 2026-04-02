@@ -1,14 +1,4 @@
 // app/api/reports/top-stores/route.js
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/reports/top-stores   (ADMIN ONLY)
-//
-// Returns store ranking by revenue/orders for the bar chart.
-//
-// Query params:
-//   period, from, to  — date filters
-//   limit             — top N stores (default 10)
-//   sortBy            = revenue | orders  (default revenue)
-// ─────────────────────────────────────────────────────────────────────────────
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import { getAuth } from '@clerk/nextjs/server';
@@ -18,15 +8,17 @@ import { buildDateRange, round2 } from '@/lib/reportUtils';
 export async function GET(request) {
   try {
     const { userId } = getAuth(request);
-    const isAdmin    = await authAdmin(userId);
+    if (!userId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+
+    const isAdmin = await authAdmin(userId);
     if (!isAdmin) return NextResponse.json({ error: 'Admin only' }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
-    const period  = searchParams.get('period') || 'month';
-    const from    = searchParams.get('from');
-    const to      = searchParams.get('to');
-    const limit   = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
-    const sortBy  = searchParams.get('sortBy') || 'revenue';
+    const period = searchParams.get('period') || 'month';
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    const limit = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
+    const sortBy = searchParams.get('sortBy') || 'revenue';
 
     const dateRange = buildDateRange(period, from, to);
 
@@ -34,11 +26,9 @@ export async function GET(request) {
     const grouped = await prisma.sale.groupBy({
       by: ['storeId'],
       where: { createdAt: dateRange },
-      _sum:   { amount: true },
+      _sum: { amount: true },
       _count: { id: true },
-      orderBy: sortBy === 'orders'
-        ? { _count: { id: 'desc' } }
-        : { _sum: { amount: 'desc' } },
+      orderBy: sortBy === 'orders' ? { _count: { id: 'desc' } } : { _sum: { amount: 'desc' } },
       take: limit,
     });
 
@@ -48,7 +38,7 @@ export async function GET(request) {
 
     // ── Fetch store metadata ──────────────────────────────────────
     const storeIds = grouped.map((g) => g.storeId);
-    const stores   = await prisma.store.findMany({
+    const stores = await prisma.store.findMany({
       where: { id: { in: storeIds } },
       select: { id: true, name: true, logo: true, username: true, email: true },
     });
@@ -57,19 +47,19 @@ export async function GET(request) {
     const totalRevenue = grouped.reduce((s, g) => s + (g._sum.amount || 0), 0);
 
     const result = grouped.map((g, idx) => {
-      const s   = storeMap[g.storeId] || {};
+      const s = storeMap[g.storeId] || {};
       const rev = round2(g._sum.amount || 0);
       return {
-        rank:      idx + 1,
-        storeId:   g.storeId,
-        name:      s.name      || 'Unknown Store',
-        logo:      s.logo      || null,
-        username:  s.username  || '',
-        email:     s.email     || '',
-        revenue:   rev,
-        orders:    g._count.id || 0,
-        share:     totalRevenue > 0 ? round2((rev / totalRevenue) * 100) : 0,
-        aov:       g._count.id > 0 ? round2(rev / g._count.id) : 0,
+        rank: idx + 1,
+        storeId: g.storeId,
+        name: s.name || 'Unknown Store',
+        logo: s.logo || null,
+        username: s.username || '',
+        email: s.email || '',
+        revenue: rev,
+        orders: g._count.id || 0,
+        share: totalRevenue > 0 ? round2((rev / totalRevenue) * 100) : 0,
+        aov: g._count.id > 0 ? round2(rev / g._count.id) : 0,
       };
     });
 
@@ -77,11 +67,11 @@ export async function GET(request) {
       stores: result,
       meta: {
         period,
-        total:  round2(totalRevenue),
-        count:  result.length,
+        total: round2(totalRevenue),
+        count: result.length,
         sortBy,
-        from:   dateRange.gte,
-        to:     dateRange.lte,
+        from: dateRange.gte,
+        to: dateRange.lte,
       },
     });
   } catch (error) {

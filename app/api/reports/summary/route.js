@@ -2,15 +2,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/reports/summary
 //
-// Query params:
-//   period      = today | yesterday | week | month | year | custom
-//   from        = ISO date (required if period=custom)
-//   to          = ISO date (required if period=custom)
-//   storeId     = (admin only) filter to a specific store
-//   comparison  = today_vs_yesterday | month_vs_last_month | year_vs_last_year
-//
-// Response:
-//   { summary: { revenue, orders, aov, growth, comparison? } }
+// ✅ TC-10 FIX: Returns 400 (not 500) when custom range missing from/to
+// ✅ TC-13 FIX: Returns { growth, note } for zero-division comparison cases
 // ─────────────────────────────────────────────────────────────────────────────
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
@@ -35,39 +28,40 @@ export async function GET(request) {
     if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
-    const period     = searchParams.get('period')     || 'month';
-    const from       = searchParams.get('from');
-    const to         = searchParams.get('to');
+    const period = searchParams.get('period') || 'month';
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
     const filterStore = searchParams.get('storeId');
-    const comparison  = searchParams.get('comparison');
+    const comparison = searchParams.get('comparison');
 
-    // Determine which store(s) to scope
-    const scopedStoreId = role === 'ADMIN'
-      ? (filterStore || undefined)   // admin can filter or see all
-      : myStoreId;                   // store always sees only their own
-
+    // ✅ TC-10 FIX: buildDateRange returns null for invalid custom range
     const dateRange = buildDateRange(period, from, to);
+    if (!dateRange) {
+      return NextResponse.json(
+        { error: 'Custom period requires valid "from" and "to" dates' },
+        { status: 400 }
+      );
+    }
 
-    // ── Build where clause ────────────────────────────────────────
+    // Store role always scoped to own store; admin can filter or see all
+    const scopedStoreId = role === 'ADMIN' ? filterStore || undefined : myStoreId;
+
     const where = {
       createdAt: dateRange,
       ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
     };
 
     // ── Current period aggregation ────────────────────────────────
-    const [agg, count] = await Promise.all([
-      prisma.sale.aggregate({
-        where,
-        _sum: { amount: true },
-        _count: { id: true },
-        _avg: { amount: true },
-      }),
-      prisma.sale.count({ where }),
-    ]);
+    const agg = await prisma.sale.aggregate({
+      where,
+      _sum: { amount: true },
+      _count: { id: true },
+      _avg: { amount: true },
+    });
 
     const revenue = round2(agg._sum.amount || 0);
-    const orders  = agg._count.id || 0;
-    const aov     = round2(agg._avg.amount || 0);
+    const orders = agg._count.id || 0;
+    const aov = round2(agg._avg.amount || 0);
 
     // ── Top performing store (admin only) ─────────────────────────
     let topStore = null;
@@ -84,7 +78,10 @@ export async function GET(request) {
           where: { id: topStoreRaw[0].storeId },
           select: { id: true, name: true, logo: true, username: true },
         });
-        topStore = { ...storeData, revenue: round2(topStoreRaw[0]._sum.amount || 0) };
+        topStore = {
+          ...storeData,
+          revenue: round2(topStoreRaw[0]._sum.amount || 0),
+        };
       }
     }
 
@@ -93,26 +90,45 @@ export async function GET(request) {
     if (comparison) {
       const ranges = buildComparisonRanges(comparison);
       if (ranges) {
+        const storeFilter = scopedStoreId ? { storeId: scopedStoreId } : {};
+
         const [curr, prev] = await Promise.all([
           prisma.sale.aggregate({
-            where: { createdAt: ranges.current,  ...(scopedStoreId ? { storeId: scopedStoreId } : {}) },
-            _sum: { amount: true }, _count: { id: true },
+            where: { createdAt: ranges.current, ...storeFilter },
+            _sum: { amount: true },
+            _count: { id: true },
           }),
           prisma.sale.aggregate({
-            where: { createdAt: ranges.previous, ...(scopedStoreId ? { storeId: scopedStoreId } : {}) },
-            _sum: { amount: true }, _count: { id: true },
+            where: { createdAt: ranges.previous, ...storeFilter },
+            _sum: { amount: true },
+            _count: { id: true },
           }),
         ]);
 
-        const currRev  = round2(curr._sum.amount || 0);
-        const prevRev  = round2(prev._sum.amount || 0);
+        const currRev = round2(curr._sum.amount || 0);
+        const prevRev = round2(prev._sum.amount || 0);
         const currOrds = curr._count.id || 0;
         const prevOrds = prev._count.id || 0;
 
+        // ✅ TC-13 FIX: calcGrowth now returns { growth, note }
+        // note = "No previous data" when previous period had 0 sales
+        const revGrowth = calcGrowth(currRev, prevRev);
+        const ordGrowth = calcGrowth(currOrds, prevOrds);
+
         comparisonData = {
-          labels:        ranges.labels,
-          revenue:       { current: currRev,  previous: prevRev,  growth: calcGrowth(currRev, prevRev) },
-          orders:        { current: currOrds, previous: prevOrds, growth: calcGrowth(currOrds, prevOrds) },
+          labels: ranges.labels,
+          revenue: {
+            current: currRev,
+            previous: prevRev,
+            growth: revGrowth.growth,
+            note: revGrowth.note, // ✅ "No previous data" or null
+          },
+          orders: {
+            current: currOrds,
+            previous: prevOrds,
+            growth: ordGrowth.growth,
+            note: ordGrowth.note, // ✅ "No previous data" or null
+          },
         };
       }
     }
