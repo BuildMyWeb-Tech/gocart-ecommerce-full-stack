@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\api\store\is-seller\route.js
 import prisma from '@/lib/prisma';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@clerk/nextjs/server';

@@ -1,16 +1,5 @@
 // app/api/reports/sales-trend/route.js
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/reports/sales-trend
-//
-// Returns daily time-series data for Line + Bar charts.
-// Uses Prisma groupBy on Sale.createdAt — no joins, index-backed.
-//
-// Query params:
-//   period    = today | yesterday | week | month | year | custom
-//   from, to  = ISO dates (custom only)
-//   storeId   = admin filter
-//   granularity = day | week | month  (default: day)
-// ─────────────────────────────────────────────────────────────────────────────
+// ✅ TC-10 FIX: Returns 400 when custom range has missing from/to
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import authSeller from '@/middlewares/authSeller';
@@ -34,67 +23,65 @@ export async function GET(request) {
     if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
-    const period      = searchParams.get('period')      || 'month';
-    const from        = searchParams.get('from');
-    const to          = searchParams.get('to');
+    const period = searchParams.get('period') || 'month';
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
     const filterStore = searchParams.get('storeId');
 
-    const scopedStoreId = role === 'ADMIN' ? (filterStore || undefined) : myStoreId;
+    // ✅ TC-10 FIX
     const dateRange = buildDateRange(period, from, to);
+    if (!dateRange) {
+      return NextResponse.json(
+        { error: 'Custom period requires valid "from" and "to" dates' },
+        { status: 400 }
+      );
+    }
+
+    const scopedStoreId = role === 'ADMIN' ? filterStore || undefined : myStoreId;
 
     const where = {
       createdAt: dateRange,
       ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
     };
 
-    // ── Fetch raw sales in range ──────────────────────────────────
-    // groupBy date string via raw aggregation for performance
     const sales = await prisma.sale.findMany({
       where,
       select: { amount: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    // ── Bucket by day ─────────────────────────────────────────────
+    // Bucket by day
     const buckets = {};
     for (const sale of sales) {
-      const key = sale.createdAt.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+      const key = sale.createdAt.toISOString().split('T')[0];
       if (!buckets[key]) buckets[key] = { revenue: 0, count: 0 };
       buckets[key].revenue += sale.amount;
-      buckets[key].count   += 1;
+      buckets[key].count += 1;
     }
 
-    // ── Fill every day in range (no gaps for charts) ──────────────
+    // Fill every day — no gaps for charts (TC-14 ✅)
     const trend = [];
     const cursor = new Date(dateRange.gte);
-    const end    = new Date(dateRange.lte);
+    const end = new Date(dateRange.lte);
     while (cursor <= end) {
-      const key   = cursor.toISOString().split('T')[0];
+      const key = cursor.toISOString().split('T')[0];
       const label = fmtDay(new Date(cursor));
       trend.push({
-        date:    key,
+        date: key,
         label,
         revenue: round2(buckets[key]?.revenue || 0),
-        count:   buckets[key]?.count || 0,
+        count: buckets[key]?.count || 0,
       });
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    // ── Totals for the period ─────────────────────────────────────
     const totalRevenue = round2(sales.reduce((s, x) => s + x.amount, 0));
-    const totalCount   = sales.length;
-    const peakDay      = trend.reduce((best, d) => (d.revenue > (best?.revenue || 0) ? d : best), null);
+    const totalCount = sales.length;
+    const peakDay = trend.reduce((best, d) => (d.revenue > (best?.revenue || 0) ? d : best), null);
 
     return NextResponse.json({
       trend,
-      meta: {
-        totalRevenue,
-        totalCount,
-        peakDay,
-        period,
-        from: dateRange.gte,
-        to:   dateRange.lte,
-      },
+      meta: { totalRevenue, totalCount, peakDay, period, from: dateRange.gte, to: dateRange.lte },
     });
   } catch (error) {
     console.error('GET /api/reports/sales-trend error:', error);
