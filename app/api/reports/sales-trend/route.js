@@ -1,5 +1,6 @@
 // app/api/reports/sales-trend/route.js
-// ✅ TC-10 FIX: Returns 400 when custom range has missing from/to
+// ✅ TIMEZONE FIX: day bucketing now uses IST date, not UTC date.
+// ✅ TC-10 FIX: Returns 400 when custom range has missing from/to.
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import authSeller from '@/middlewares/authSeller';
@@ -17,6 +18,13 @@ async function resolveRole(request) {
   return { role: null, storeId: null };
 }
 
+// ✅ Convert a UTC Date to IST YYYY-MM-DD string for bucketing
+function toISTDateKey(utcDate) {
+  return new Date(utcDate).toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  }); // returns 'YYYY-MM-DD' format
+}
+
 export async function GET(request) {
   try {
     const { role, storeId: myStoreId } = await resolveRole(request);
@@ -28,7 +36,6 @@ export async function GET(request) {
     const to = searchParams.get('to');
     const filterStore = searchParams.get('storeId');
 
-    // ✅ TC-10 FIX
     const dateRange = buildDateRange(period, from, to);
     if (!dateRange) {
       return NextResponse.json(
@@ -50,22 +57,23 @@ export async function GET(request) {
       orderBy: { createdAt: 'asc' },
     });
 
-    // Bucket by day
+    // ✅ Bucket by IST date (not UTC date)
+    // Without this fix, a sale at 10:30pm IST = 5pm UTC buckets to the wrong day
     const buckets = {};
     for (const sale of sales) {
-      const key = sale.createdAt.toISOString().split('T')[0];
+      const key = toISTDateKey(sale.createdAt); // 'YYYY-MM-DD' in IST
       if (!buckets[key]) buckets[key] = { revenue: 0, count: 0 };
       buckets[key].revenue += sale.amount;
       buckets[key].count += 1;
     }
 
-    // Fill every day — no gaps for charts (TC-14 ✅)
+    // Fill every IST day in range — no gaps for charts
     const trend = [];
     const cursor = new Date(dateRange.gte);
     const end = new Date(dateRange.lte);
     while (cursor <= end) {
-      const key = cursor.toISOString().split('T')[0];
-      const label = fmtDay(new Date(cursor));
+      const key = toISTDateKey(cursor); // IST date key
+      const label = fmtDay(cursor); // IST-formatted label
       trend.push({
         date: key,
         label,
@@ -81,7 +89,14 @@ export async function GET(request) {
 
     return NextResponse.json({
       trend,
-      meta: { totalRevenue, totalCount, peakDay, period, from: dateRange.gte, to: dateRange.lte },
+      meta: {
+        totalRevenue,
+        totalCount,
+        peakDay,
+        period,
+        from: dateRange.gte,
+        to: dateRange.lte,
+      },
     });
   } catch (error) {
     console.error('GET /api/reports/sales-trend error:', error);

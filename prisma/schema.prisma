@@ -23,29 +23,23 @@ model User {
     buyerOrders Order[]   @relation("BuyerRelation")
 }
 
-// ── Category: scoped by createdBy + optional storeId ─────────────
-// createdBy = "ADMIN" → global, storeId = null
-// createdBy = "STORE" → store-specific, storeId = store's id
 model Category {
     id          String   @id @default(cuid())
     name        String
     description String
     image       String
-    createdBy   String   @default("ADMIN")  // "ADMIN" | "STORE"
-    storeId     String?                      // null = global (admin)
+    createdBy   String   @default("ADMIN")
+    storeId     String?
     createdAt   DateTime @default(now())
     updatedAt   DateTime @updatedAt
 
     store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-    // Unique name per scope: admin categories unique globally,
-    // store categories unique per store
     @@unique([name, storeId])
     @@index([storeId])
     @@index([createdBy])
 }
 
-// ── Product: storeId nullable = admin global product ─────────────
 model Product {
     id          String   @id @default(cuid())
     name        String
@@ -57,19 +51,38 @@ model Product {
     quantity    Int      @default(0)
     keyFeatures String[] @default([])
     inStock     Boolean  @default(true)
-    // null = admin global product, set = store product
     storeId     String?
-    createdBy   String   @default("STORE")  // "ADMIN" | "STORE"
+    createdBy   String   @default("STORE")
     createdAt   DateTime @default(now())
     updatedAt   DateTime @updatedAt
 
     store      Store?      @relation(fields: [storeId], references: [id], onDelete: Cascade)
     orderItems OrderItem[]
     rating     Rating[]
+    inventory  Inventory[]
 
     @@index([storeId])
     @@index([createdBy])
     @@index([inStock])
+}
+
+// ── Inventory: one record per product per store ───────────────────
+model Inventory {
+    id        String   @id @default(cuid())
+    productId String
+    storeId   String
+    quantity  Int      @default(0)
+    lowStock  Int      @default(10)   // threshold — warn if qty < lowStock
+    updatedAt DateTime @updatedAt
+
+    product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+    store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+    // One inventory record per product per store
+    @@unique([productId, storeId])
+    @@index([storeId])
+    @@index([productId])
+    @@index([quantity])
 }
 
 enum OrderStatus {
@@ -175,16 +188,18 @@ model Store {
     createdAt   DateTime @default(now())
     updatedAt   DateTime @updatedAt
 
-    Product    Product[]
-    Order      Order[]
-    Category   Category[]
-    Sale       Sale[]   // ✅ ADD THIS LINE
-    user       User      @relation(fields: [userId], references: [id])
+    Product   Product[]
+    Order     Order[]
+    Category  Category[]
+    Sale      Sale[]
+    Inventory Inventory[]
+
+    user User @relation(fields: [userId], references: [id])
 }
 
 enum SaleSource {
-    ORDER    // from ecommerce order
-    BILLING  // from POS billing (future)
+    ORDER
+    BILLING
 }
 
 model Sale {
@@ -192,15 +207,14 @@ model Sale {
     storeId     String
     amount      Float
     source      SaleSource @default(ORDER)
-    referenceId String     // orderId or billingId
+    referenceId String
     createdAt   DateTime   @default(now())
 
     store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-    // ── Performance indexes for large datasets ────────────────────
     @@index([storeId])
     @@index([createdAt])
-    @@index([storeId, createdAt])   // compound — most queries filter both
+    @@index([storeId, createdAt])
     @@index([source])
     @@index([referenceId])
 }
