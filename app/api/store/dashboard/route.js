@@ -1,22 +1,32 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\api\store\dashboard\route.js
+// app/api/store/dashboard/route.js
 import prisma from '@/lib/prisma';
 import authSeller from '@/middlewares/authSeller';
+import { verifyEmployeeToken } from '@/middlewares/authEmployee';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
   try {
-    const { userId } = getAuth(request);
-    const storeId = await authSeller(userId);
+    let storeId = null;
+
+    // ── Check employee JWT first ───────────────────────────────
+    const employee = verifyEmployeeToken(request);
+    if (employee?.storeId) {
+      storeId = employee.storeId;
+    }
+
+    // ── Fall back to Clerk ─────────────────────────────────────
+    if (!storeId) {
+      const { userId } = getAuth(request);
+      storeId = await authSeller(userId);
+    }
 
     if (!storeId) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-    // ── Parallel queries for performance ─────────────────────────
     const [products, orders, ratings, categories] = await Promise.all([
       prisma.product.findMany({ where: { storeId }, select: { id: true } }),
-
       prisma.order.findMany({
         where: { storeId },
         select: {
@@ -28,7 +38,6 @@ export async function GET(request) {
           userId: true,
         },
       }),
-
       prisma.rating.findMany({
         where: { product: { storeId } },
         select: {
@@ -41,36 +50,28 @@ export async function GET(request) {
         },
         orderBy: { createdAt: 'desc' },
       }),
-
       prisma.category.findMany({ select: { id: true } }),
     ]);
 
-    // ── Order status counts ───────────────────────────────────────
     const statusCounts = orders.reduce(
       (acc, o) => {
-        const s = o.status;
-        if (s === 'ORDER_PLACED') acc.pending++;
-        else if (s === 'PROCESSING') acc.processing++;
-        else if (s === 'SHIPPED') acc.shipped++;
-        else if (s === 'DELIVERED') acc.delivered++;
-        else if (s === 'CANCELLED') acc.cancelled++;
+        if (o.status === 'ORDER_PLACED') acc.pending++;
+        else if (o.status === 'PROCESSING') acc.processing++;
+        else if (o.status === 'SHIPPED') acc.shipped++;
+        else if (o.status === 'DELIVERED') acc.delivered++;
+        else if (o.status === 'CANCELLED') acc.cancelled++;
         return acc;
       },
       { pending: 0, processing: 0, shipped: 0, delivered: 0, cancelled: 0 }
     );
 
-    // ── Revenue = sum of all paid delivered orders ────────────────
     const revenue = orders
       .filter((o) => o.status === 'DELIVERED' && o.isPaid)
       .reduce((sum, o) => sum + o.total, 0);
 
-    // ── Total earnings (all orders regardless of status) ─────────
     const totalEarnings = orders.reduce((sum, o) => sum + o.total, 0);
-
-    // ── Unique customers ──────────────────────────────────────────
     const uniqueCustomers = new Set(orders.map((o) => o.userId)).size;
 
-    // ── Revenue over last 30 days (daily) ────────────────────────
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -86,7 +87,6 @@ export async function GET(request) {
       }
     });
 
-    // Fill missing days with 0 so chart is continuous
     const dailyData = [];
     for (let i = 29; i >= 0; i--) {
       const d = new Date();
@@ -102,25 +102,14 @@ export async function GET(request) {
 
     return NextResponse.json({
       dashboardData: {
-        // Summary counts
         totalProducts: products.length,
         totalOrders: orders.length,
         totalCategories: categories.length,
         totalCustomers: uniqueCustomers,
         totalEarnings: Math.round(totalEarnings * 100) / 100,
         revenue: Math.round(revenue * 100) / 100,
-
-        // Order status breakdown
-        pending: statusCounts.pending,
-        processing: statusCounts.processing,
-        shipped: statusCounts.shipped,
-        delivered: statusCounts.delivered,
-        cancelled: statusCounts.cancelled,
-
-        // Charts data
-        dailyData, // for Line chart (revenue) and Bar chart (orders)
-
-        // Reviews
+        ...statusCounts,
+        dailyData,
         ratings,
       },
     });

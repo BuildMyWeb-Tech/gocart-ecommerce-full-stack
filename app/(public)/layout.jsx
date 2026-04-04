@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\(public)\layout.jsx
 'use client'
 import Banner from "@/components/Banner";
 import Navbar from "@/components/Navbar";

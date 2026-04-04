@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\Navbar.jsx
 'use client'
 import { PackageIcon, Search, ShoppingCart, HomeIcon, MenuIcon, XIcon, UserIcon, LayoutGridIcon, ShoppingBagIcon, Heart, Trash2 } from "lucide-react";
 import Link from "next/link";

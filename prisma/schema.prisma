@@ -1,7 +1,6 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\prisma\schema.prisma
+// prisma/schema.prisma
 generator client {
-    provider        = "prisma-client-js"
-    previewFeatures = ["driverAdapters"]
+    provider = "prisma-client-js"
 }
 
 datasource db {
@@ -66,19 +65,17 @@ model Product {
     @@index([inStock])
 }
 
-// ── Inventory: one record per product per store ───────────────────
 model Inventory {
     id        String   @id @default(cuid())
     productId String
     storeId   String
     quantity  Int      @default(0)
-    lowStock  Int      @default(10)   // threshold — warn if qty < lowStock
+    lowStock  Int      @default(10)
     updatedAt DateTime @updatedAt
 
     product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
     store   Store   @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-    // One inventory record per product per store
     @@unique([productId, storeId])
     @@index([storeId])
     @@index([productId])
@@ -87,9 +84,14 @@ model Inventory {
 
 enum OrderStatus {
     ORDER_PLACED
+    CONFIRMED
     PROCESSING
     SHIPPED
     DELIVERED
+    CANCELLED
+    RETURN_REQUESTED
+    RETURNED
+    REFUNDED
 }
 
 enum PaymentMethod {
@@ -111,10 +113,30 @@ model Order {
     isCouponUsed  Boolean       @default(false)
     coupon        Json          @default("{}")
     orderItems    OrderItem[]
+    timeline      OrderTimeline[]
 
     user    User    @relation("BuyerRelation", fields: [userId], references: [id])
     store   Store   @relation(fields: [storeId], references: [id])
     address Address @relation(fields: [addressId], references: [id])
+
+    @@index([storeId])
+    @@index([status])
+    @@index([createdAt])
+    @@index([userId])
+}
+
+model OrderTimeline {
+    id        String      @id @default(cuid())
+    orderId   String
+    status    OrderStatus
+    changedBy String
+    note      String?
+    createdAt DateTime    @default(now())
+
+    order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+    @@index([orderId])
+    @@index([createdAt])
 }
 
 model OrderItem {
@@ -193,6 +215,7 @@ model Store {
     Category  Category[]
     Sale      Sale[]
     Inventory Inventory[]
+    Employee  Employee[]
 
     user User @relation(fields: [userId], references: [id])
 }
@@ -217,4 +240,21 @@ model Sale {
     @@index([storeId, createdAt])
     @@index([source])
     @@index([referenceId])
+}
+
+// ── NEW: Employee model for RBAC ──────────────────────────────────
+model Employee {
+    id          String   @id @default(cuid())
+    name        String
+    email       String   @unique
+    password    String
+    storeId     String
+    role        String   // STORE_OWNER or EMPLOYEE
+    permissions Json     @default("{}")
+    isActive    Boolean  @default(true)
+    createdAt   DateTime @default(now())
+
+    store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+    @@index([storeId])
 }

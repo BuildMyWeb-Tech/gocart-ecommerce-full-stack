@@ -1,26 +1,13 @@
-import StoreLayout from "@/components/store/StoreLayout";
-import {SignedIn, SignedOut, SignIn} from "@clerk/nextjs"
+// app/store/layout.jsx
+import StoreLayout from '@/components/store/StoreLayout';
 
 export const metadata = {
-    title: "KingCart. - Store Dashboard",
-    description: "KingCart. - Store Dashboard",
+  title: 'KingCart. - Store Dashboard',
+  description: 'KingCart. - Store Dashboard',
 };
 
-export default function RootAdminLayout({ children }) {
-
-    return (
-        <>  
-        <SignedIn>
-            <StoreLayout>
-                {children}
-            </StoreLayout>
-        </SignedIn>
-        <SignedOut>
-            <div className="min-h-screen flex items-center justify-center">
-                <SignIn fallbackRedirectUrl="/store" routing="hash" />
-            </div>
-        </SignedOut>
-            
-        </>
-    );
+// No more SignedIn/SignedOut split.
+// StoreLayout handles BOTH Clerk owners AND employee JWT internally.
+export default function RootStoreLayout({ children }) {
+  return <StoreLayout>{children}</StoreLayout>;
 }
