@@ -1,4 +1,4 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\store\page.jsx
+// app/store/page.jsx
 'use client';
 import Loading from '@/components/Loading';
 import { useAuth } from '@clerk/nextjs';
@@ -7,7 +7,6 @@ import {
   IndianRupee,
   ShoppingBasket,
   Star,
-  Tags,
   TrendingUp,
   RefreshCcw,
   Users,
@@ -37,11 +36,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from 'recharts';
 
-// ── Pie chart colours ────────────────────────────────────────────
+// ── Pie chart colours ─────────────────────────────────────────────
 const PIE_COLORS = {
   Delivered: '#22c55e',
   Pending: '#f59e0b',
@@ -50,7 +48,7 @@ const PIE_COLORS = {
   Cancelled: '#ef4444',
 };
 
-// ── Stat card component ──────────────────────────────────────────
+// ── Stat card ─────────────────────────────────────────────────────
 function StatCard({ title, value, icon: Icon, color }) {
   const colorMap = {
     blue: {
@@ -134,7 +132,7 @@ function StatCard({ title, value, icon: Icon, color }) {
   );
 }
 
-// ── Custom tooltip for charts ────────────────────────────────────
+// ── Chart tooltip ─────────────────────────────────────────────────
 const RevenueTooltip = ({ active, payload, label }) => {
   if (active && payload?.length) {
     return (
@@ -151,13 +149,13 @@ const RevenueTooltip = ({ active, payload, label }) => {
   return null;
 };
 
-// ── Main Dashboard ───────────────────────────────────────────────
+// ── Main Dashboard ────────────────────────────────────────────────
 export default function Dashboard() {
   const { getToken } = useAuth();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [chartTab, setChartTab] = useState('revenue'); // 'revenue' | 'orders'
+  const [chartTab, setChartTab] = useState('revenue');
   const [dash, setDash] = useState({
     totalProducts: 0,
     totalOrders: 0,
@@ -174,13 +172,19 @@ export default function Dashboard() {
     ratings: [],
   });
 
+  // ── Unified auth header: employee JWT first, then Clerk ──────────
+  const getAuthHeader = async () => {
+    const empToken = typeof window !== 'undefined' ? localStorage.getItem('employeeToken') : null;
+    if (empToken) return { Authorization: `Bearer ${empToken}` };
+    const token = await getToken();
+    return { Authorization: `Bearer ${token}` };
+  };
+
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const token = await getToken();
-      const { data } = await axios.get('/api/store/dashboard', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const headers = await getAuthHeader();
+      const { data } = await axios.get('/api/store/dashboard', { headers });
       setDash(data.dashboardData);
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message);
@@ -195,7 +199,7 @@ export default function Dashboard() {
 
   if (loading) return <Loading />;
 
-  // ── Derived values ─────────────────────────────────────────────
+  // ── Derived values ────────────────────────────────────────────────
   const avgRating = dash.ratings.length
     ? (dash.ratings.reduce((s, r) => s + r.rating, 0) / dash.ratings.length).toFixed(1)
     : '—';
@@ -203,7 +207,6 @@ export default function Dashboard() {
   const conversionRate =
     dash.totalOrders > 0 ? ((dash.delivered / dash.totalOrders) * 100).toFixed(1) : '0.0';
 
-  // Pie chart data
   const pieData = [
     { name: 'Delivered', value: dash.delivered },
     { name: 'Pending', value: dash.pending },
@@ -212,7 +215,6 @@ export default function Dashboard() {
     { name: 'Cancelled', value: dash.cancelled },
   ].filter((d) => d.value > 0);
 
-  // Bar chart: order status breakdown
   const barData = [
     { status: 'Pending', count: dash.pending },
     { status: 'Processing', count: dash.processing },
@@ -221,12 +223,11 @@ export default function Dashboard() {
     { status: 'Cancelled', count: dash.cancelled },
   ];
 
-  // Show last 14 days on chart to avoid crowding
   const chartData = dash.dailyData.slice(-14);
 
   return (
     <div className="text-slate-600 pb-28 space-y-8">
-      {/* ── Header ─────────────────────────────────────────── */}
+      {/* ── Header ───────────────────────────────────────────── */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Seller Dashboard</h1>
@@ -238,12 +239,11 @@ export default function Dashboard() {
           onClick={fetchDashboardData}
           className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-lg text-slate-700 text-sm transition-all"
         >
-          <RefreshCcw size={14} />
-          Refresh
+          <RefreshCcw size={14} /> Refresh
         </button>
       </div>
 
-      {/* ── Summary Cards (11 metrics) ──────────────────────── */}
+      {/* ── Stat Cards ───────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         <StatCard
           title="Total Products"
@@ -283,33 +283,28 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* ── Charts Row ──────────────────────────────────────── */}
+      {/* ── Charts Row ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Line / Bar Chart (2/3 width) */}
+        {/* Line / Bar Chart */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <h3 className="font-semibold text-slate-800">Trends (Last 14 Days)</h3>
             <div className="flex gap-2">
-              <button
-                onClick={() => setChartTab('revenue')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  chartTab === 'revenue'
-                    ? 'bg-green-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                Revenue
-              </button>
-              <button
-                onClick={() => setChartTab('orders')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  chartTab === 'orders'
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                Orders
-              </button>
+              {['revenue', 'orders'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setChartTab(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    chartTab === tab
+                      ? tab === 'revenue'
+                        ? 'bg-green-600 text-white'
+                        : 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -348,7 +343,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Pie Chart (1/3 width) */}
+        {/* Pie Chart */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-semibold text-slate-800 mb-5">Order Distribution</h3>
           {pieData.length === 0 ? (
@@ -394,7 +389,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Order Status Bar Chart ───────────────────────────── */}
+      {/* ── Orders by Status Bar Chart ───────────────────────── */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h3 className="font-semibold text-slate-800 mb-5">Orders by Status</h3>
         <ResponsiveContainer width="100%" height={200}>
@@ -412,7 +407,7 @@ export default function Dashboard() {
         </ResponsiveContainer>
       </div>
 
-      {/* ── Quick Stats Row ─────────────────────────────────── */}
+      {/* ── Quick Stats ──────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center gap-4">
           <div className="bg-amber-100 rounded-xl p-3">
@@ -456,7 +451,6 @@ export default function Dashboard() {
             {dash.ratings.length} total
           </span>
         </div>
-
         <div className="divide-y divide-slate-100">
           {dash.ratings.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -511,7 +505,6 @@ export default function Dashboard() {
                     </div>
                     <p className="text-slate-700 leading-relaxed">{review.review}</p>
                   </div>
-
                   <div className="sm:ml-4 sm:w-56 flex-shrink-0 sm:border-l sm:border-slate-200 sm:pl-4">
                     <div className="inline-block bg-blue-100 text-blue-700 text-xs font-medium px-2 py-0.5 rounded-full mb-2">
                       {Array.isArray(review.product?.category)

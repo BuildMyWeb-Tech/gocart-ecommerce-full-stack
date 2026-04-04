@@ -1,4 +1,4 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\api\store\is-seller\route.js
+// app/api/store/is-seller/route.js
 import prisma from '@/lib/prisma';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@clerk/nextjs/server';
@@ -20,7 +20,8 @@ export async function GET(request) {
 
     const store = await prisma.store.findUnique({ where: { id: storeId } });
 
-    return NextResponse.json({ isSeller: true, store });
+    // ← Fixed: return as BOTH storeInfo AND store so any caller works
+    return NextResponse.json({ isSeller: true, storeInfo: store, store });
   } catch (error) {
     console.error('GET /api/store/is-seller error:', error);
     return NextResponse.json({ error: error.message }, { status: 400 });

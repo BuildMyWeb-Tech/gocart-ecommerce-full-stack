@@ -1,54 +1,10 @@
-
 C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
 📄 .env
 📄 .env.example
-📁 .git
-   📄 COMMIT_EDITMSG
-   📄 config
-   📄 description
-   📄 FETCH_HEAD
-   📄 HEAD
-   📁 hooks
-      📄 applypatch-msg.sample
-      
-   📄 index
-   📁 info
-      📄 exclude
-   📁 logs
-      📄 HEAD
-      📁 refs
-         📁 heads
-            📄 main
-            📄 Mauli
-         📁 remotes
-            📁 origin
-               📄 Ajai
-               📄 HEAD
-               📄 main
-               📄 Mauli
-   📁 objects
-      
-   📄 ORIG_HEAD
-   📄 packed-refs
-   📁 refs
-      📁 heads
-         📄 main
-         📄 Mauli
-      📁 remotes
-         📁 origin
-            📄 Ajai
-            📄 HEAD
-            📄 main
-            📄 Mauli
-      📁 tags
 📄 .gitignore
 📁 .next
    📄 app-build-manifest.json
    📁 build
-      📁 chunks
-         📄 node_modules_fe693df6._.js
-         📄 node_modules_fe693df6._.js.map
-         
    📄 build-manifest.json
    📁 cache
       📄 .rscinfo
@@ -185,7 +141,29 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                📄 page.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
+            📁 inventory
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
             📁 manage-product
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
+            📁 orders
                📁 page
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -284,6 +262,15 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                   📄 route.js
                   📄 route.js.map
                   📄 route_client-reference-manifest.js
+               📁 orders
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
                📁 stores
                   📁 route
                      📄 app-build-manifest.json
@@ -329,6 +316,33 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                📄 route.js
                📄 route.js.map
                📄 route_client-reference-manifest.js
+            📁 inngest
+               📁 route
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 server-reference-manifest.json
+               📄 route.js
+               📄 route.js.map
+               📄 route_client-reference-manifest.js
+            📁 inventory
+               📁 route
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 server-reference-manifest.json
+               📄 route.js
+               📄 route.js.map
+               📄 route_client-reference-manifest.js
+               📁 update
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
             📁 orders
                📁 route
                   📄 app-build-manifest.json
@@ -338,6 +352,15 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                📄 route.js
                📄 route.js.map
                📄 route_client-reference-manifest.js
+               📁 status
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
             📁 products
                📁 route
                   📄 app-build-manifest.json
@@ -357,6 +380,15 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                📄 route.js.map
                📄 route_client-reference-manifest.js
             📁 reports
+               📁 export
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
                📁 sales-trend
                   📁 route
                      📄 app-build-manifest.json
@@ -385,6 +417,16 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                   📄 route.js.map
                   📄 route_client-reference-manifest.js
                📁 top-stores
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
+            📁 sales
+               📁 sync
                   📁 route
                      📄 app-build-manifest.json
                      📄 app-paths-manifest.json
@@ -457,6 +499,15 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                   📄 route.js
                   📄 route.js.map
                   📄 route_client-reference-manifest.js
+            📁 stripe
+               📁 route
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 server-reference-manifest.json
+               📄 route.js
+               📄 route.js.map
+               📄 route_client-reference-manifest.js
          📁 favicon.ico
             📁 route
                📄 app-build-manifest.json
@@ -488,6 +539,17 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
             📁 categories
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
+            📁 inventory
                📁 page
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -542,13 +604,8 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
             📄 page.js.map
             📄 page_client-reference-manifest.js
       📄 app-paths-manifest.json
-      📁 chunks
-         📄 node_modules_0caa8154._.js
-
+      📄 app-paths-manifest.json.tmp.2re6hdiz5ta
       📁 edge
-         📁 chunks
-            📄 edge-wrapper_c593f7a1.js.map
-            
       📄 interception-route-rewrite-manifest.js
       📁 middleware
          📄 middleware-manifest.json
@@ -556,13 +613,67 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
       📄 middleware-manifest.json
       📄 next-font-manifest.js
       📄 next-font-manifest.json
+      📁 pages
+         📁 _app
+            📄 build-manifest.json
+            📄 client-build-manifest.json
+            📄 next-font-manifest.json
+            📄 pages-manifest.json
+            📄 react-loadable-manifest.json
+         📄 _app.js
+         📄 _app.js.map
+         📁 _document
+            📄 next-font-manifest.json
+            📄 pages-manifest.json
+            📄 react-loadable-manifest.json
+         📄 _document.js
+         📄 _document.js.map
+         📁 _error
+            📄 build-manifest.json
+            📄 client-build-manifest.json
+            📄 next-font-manifest.json
+            📄 pages-manifest.json
+            📄 react-loadable-manifest.json
+         📄 _error.js
+         📄 _error.js.map
       📄 pages-manifest.json
       📄 server-reference-manifest.js
       📄 server-reference-manifest.json
    📁 static
-      📁 chunks
-         📄 a9bf9_@clerk_nextjs_dist_esm_app-router_client_keyless-creator-reader_f6fb3c27.js
-        
+      📁 development
+         📄 _buildManifest.js
+         📄 _clientMiddlewareManifest.json
+         📄 _ssgManifest.js
+      📁 media
+         📄 1b99372b3eaef0c8-s.p.758e15a8.woff2
+         📄 b2ea385cb5ae8625-s.866357a4.woff2
+         📄 favicon.73101d10.ico
+         📄 gs_logo.d679ec48.jpg
+         📄 happy_store.dd5078a4.webp
+         📄 hero_model_img.03e381f0.png
+         📄 hero_product_img1.7ccf9b66.png
+         📄 hero_product_img2.1089b4bb.png
+         📄 img_1.e3641582.jpg
+         📄 img_2.bb03df15.jpg
+         📄 img_3.7b759cf0.jpg
+         📄 img_4.03a2f2a7.jpg
+         📄 img_5.f060092e.jpg
+         📄 product_img1.6b8ce3d5.png
+         📄 product_img10.337d3b29.png
+         📄 product_img11.a0320509.png
+         📄 product_img12.86ffddfa.png
+         📄 product_img2.6290f681.png
+         📄 product_img3.c1c5e778.png
+         📄 product_img4.98741d4f.png
+         📄 product_img5.23cf72a6.png
+         📄 product_img6.6fb506c6.png
+         📄 product_img7.9327995c.png
+         📄 product_img8.864a8426.png
+         📄 product_img9.eff24dda.png
+         📄 profile_pic1.c5cf3cfe.jpg
+         📄 profile_pic2.b15edadf.jpg
+         📄 profile_pic3.3159d899.jpg
+         📄 upload_area.ccf1e6fd.svg
    📄 trace
    📁 types
       📄 routes.d.ts
@@ -602,8 +713,12 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
          📄 page.jsx
       📁 coupons
          📄 page.jsx
+      📁 inventory
+         📄 page.jsx
       📄 layout.jsx
       📁 manage-product
+         📄 page.jsx
+      📁 orders
          📄 page.jsx
       📄 page.jsx
       📁 sales-report
@@ -624,6 +739,8 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
             📄 route.js
          📁 is-admin
             📄 route.js
+         📁 orders
+            📄 route.js
          📁 stores
             📄 route.js
          📁 toggle-store
@@ -638,8 +755,18 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
          📄 route.js
       📁 inngest
          📄 route.js
+      📁 inventory
+         📁 deduct
+            📄 route.js
+         📄 route.js
+         📁 update
+            📄 route.js
       📁 orders
          📄 route.js
+         📁 status
+            📄 route.js
+         📁 timeline
+            📄 route.js
       📁 products
          📄 route.js
       📁 rating
@@ -688,6 +815,8 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
          📄 page.jsx
       📁 categories
          📄 page.jsx
+      📁 inventory
+         📄 page.jsx
       📄 layout.jsx
       📁 manage-product
          📄 page.jsx
@@ -697,7 +826,38 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
    📄 StoreProvider.js
 📁 assets
    📄 assets.js
-   
+   📄 gs_logo.jpg
+   📄 happy_store.webp
+   📄 hero_model_img.png
+   📄 hero_product_img1.png
+   📄 hero_product_img2.png
+   📄 img_1.jpg
+   📄 img_2.jpg
+   📄 img_3.jpg
+   📄 img_4.jpg
+   📄 img_5.jpg
+   📄 product_img1.png
+   📄 product_img10.png
+   📄 product_img11.png
+   📄 product_img12.png
+   📄 product_img13.png
+   📄 product_img14.png
+   📄 product_img15.png
+   📄 product_img16.png
+   📄 product_img2.png
+   📄 product_img3.png
+   📄 product_img4.png
+   📄 product_img5.png
+   📄 product_img6.png
+   📄 product_img7.png
+   📄 product_img8.png
+   📄 product_img9.png
+   📄 profile_pic1.jpg
+   📄 profile_pic2.jpg
+   📄 profile_pic3.jpg
+   📄 upload_area.svg
+📄 checkdb.mjs
+📄 checkSales.mjs
 📁 components
    📄 About.jsx
    📄 AddressModal.jsx
@@ -719,7 +879,9 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
    📄 Newsletter.jsx
    📄 OrderItem.jsx
    📄 OrdersAreaChart.jsx
+   📄 OrderStatusTracker.jsx
    📄 OrderSummary.jsx
+   📄 OrderTimeline.jsx
    📄 OurSpec.jsx
    📄 PageTitle.jsx
    📄 ProductCard.jsx
@@ -736,6 +898,7 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
 📁 configs
    📄 imageKit.js
    📄 openai.js
+📄 fixSales.mjs
 📄 How_To_Run_Project.pdf
 📁 inngest
    📄 client.js
@@ -766,7 +929,15 @@ C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack>node show-structure.js
 📄 postcss.config.mjs
 📁 prisma
    📁 migrations
-      
+      📁 20260323154144_init
+         📄 migration.sql
+      📁 20260327134656_add_key_features
+         📄 migration.sql
+      📁 20260328122814_add_createdby_to_category
+         📄 migration.sql
+      📁 20260329045724_scoped_categories_and_products
+         📄 migration.sql
+      📄 migration_lock.toml
    📄 schema.prisma
 📄 README.md
 📄 show-structure.js

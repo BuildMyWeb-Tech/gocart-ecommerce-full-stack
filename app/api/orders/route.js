@@ -22,7 +22,7 @@ async function ensureUserExists(userId) {
   });
 }
 
-// ── GET: fetch all orders for the logged-in user ──────────────────
+// ── GET: fetch all orders for the logged-in buyer ─────────────────
 export async function GET(request) {
   try {
     const { userId } = getAuth(request);
@@ -42,6 +42,7 @@ export async function GET(request) {
         },
         address: true,
         store: { select: { name: true, username: true, logo: true } },
+        timeline: { orderBy: { createdAt: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -90,7 +91,7 @@ export async function POST(request) {
       );
     }
 
-    // ── Validate same store ───────────────────────────────────────
+    // ── Validate all items belong to same store ───────────────────
     for (const item of items) {
       const itemStoreId = item.storeId ?? null;
       if (itemStoreId && itemStoreId !== storeId) {
@@ -113,21 +114,6 @@ export async function POST(request) {
     if (!store.isActive)
       return NextResponse.json({ error: 'This store is currently inactive' }, { status: 400 });
 
-    // ── ✅ Check inventory availability before placing order ───────
-    for (const item of items) {
-      const inv = await prisma.inventory.findUnique({
-        where: { productId_storeId: { productId: item.id, storeId } },
-        select: { quantity: true },
-      });
-      // If inventory record exists, enforce stock check
-      if (inv !== null && inv.quantity < item.quantity) {
-        return NextResponse.json(
-          { error: `Insufficient stock for "${item.name}". Available: ${inv.quantity}` },
-          { status: 400 }
-        );
-      }
-    }
-
     // ── Resolve coupon ────────────────────────────────────────────
     let couponData = {};
     let isCouponUsed = false;
@@ -141,12 +127,13 @@ export async function POST(request) {
       }
     }
 
+    // ── Calculate total ───────────────────────────────────────────
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const total = isCouponUsed ? subtotal - (subtotal * discount) / 100 : subtotal;
 
-    // ── Create order + deduct inventory atomically ────────────────
+    // ── Create order + initial timeline in one transaction ────────
     const order = await prisma.$transaction(async (tx) => {
-      const created = await tx.order.create({
+      const newOrder = await tx.order.create({
         data: {
           userId,
           storeId,
@@ -167,35 +154,35 @@ export async function POST(request) {
         include: { orderItems: true },
       });
 
-      // ── Deduct inventory for each ordered item ────────────────
+      // ── Log initial timeline entry ────────────────────────────
+      await tx.orderTimeline.create({
+        data: {
+          orderId: newOrder.id,
+          status: 'ORDER_PLACED',
+          changedBy: 'SYSTEM',
+          note: 'Order placed successfully',
+        },
+      });
+
+      // ── Deduct inventory ──────────────────────────────────────
       for (const item of items) {
-        const inv = await tx.inventory.findUnique({
-          where: { productId_storeId: { productId: item.id, storeId } },
+        const product = await tx.product.findUnique({
+          where: { id: item.id },
+          select: { quantity: true },
         });
-
-        if (inv) {
-          const newQty = Math.max(0, inv.quantity - item.quantity);
-
-          await tx.inventory.update({
-            where: { productId_storeId: { productId: item.id, storeId } },
-            data: { quantity: newQty },
-          });
-
-          // Sync product.quantity and inStock flag
+        if (product) {
+          const newQty = Math.max(0, product.quantity - item.quantity);
           await tx.product.update({
             where: { id: item.id },
-            data: {
-              quantity: newQty,
-              inStock: newQty > 0,
-            },
+            data: { quantity: newQty, inStock: newQty > 0 },
           });
         }
       }
 
-      return created;
+      return newOrder;
     });
 
-    // ── Trigger Inngest sale event ────────────────────────────────
+    // ── Trigger Inngest to create Sale record ─────────────────────
     await inngest.send({ name: 'app/order.created', data: { orderId: order.id } });
 
     // ── Stripe checkout ───────────────────────────────────────────

@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\api\store\create\route.js
 import imagekit from '@/configs/imageKit';
 import prisma from '@/lib/prisma';
 import { clerkClient, getAuth } from '@clerk/nextjs/server';
