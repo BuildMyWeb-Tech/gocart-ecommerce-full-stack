@@ -22,11 +22,12 @@ import {
 } from 'lucide-react';
 
 const ALL_PERMISSIONS = [
-  { key: 'billing', label: 'Billing', desc: 'Create bills & process payments' },
-  { key: 'inventory', label: 'Inventory', desc: 'Manage products & stock levels' },
-  { key: 'orders', label: 'Orders', desc: 'View & update order status' },
-  { key: 'reports', label: 'Reports', desc: 'View sales analytics & reports' },
-  { key: 'settings', label: 'Settings', desc: 'Manage store settings & employees' },
+  { key: 'billing',            label: 'Billing',             desc: 'Create bills & process payments' },
+  { key: 'inventory',          label: 'Inventory',           desc: 'View stock levels' },
+  { key: 'orders',             label: 'Orders',              desc: 'View & update order status' },
+  { key: 'reports',            label: 'Reports',             desc: 'View sales analytics & reports' },
+  { key: 'product_categories', label: 'Product Categories',  desc: 'View product categories' },
+  { key: 'manage_product',     label: 'Manage Products',     desc: 'View all listed products' },
 ];
 
 const DEFAULT_PERMS = {
@@ -35,6 +36,8 @@ const DEFAULT_PERMS = {
   orders: false,
   reports: false,
   settings: false,
+  product_categories: false,
+  manage_product: false,
 };
 
 function PermissionBadge({ permissions }) {
@@ -49,7 +52,7 @@ function PermissionBadge({ permissions }) {
           key={p}
           className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full capitalize"
         >
-          {p}
+          {p.replace(/_/g, ' ')}
         </span>
       ))}
     </div>
@@ -74,12 +77,9 @@ export default function EmployeesPage() {
     permissions: { ...DEFAULT_PERMS },
   });
 
-  // ── Get auth header (Clerk owner OR employee JWT) ──────────
   const getAuthHeader = async () => {
-    // Check employee JWT first
     const empToken = typeof window !== 'undefined' ? localStorage.getItem('employeeToken') : null;
     if (empToken) return { Authorization: `Bearer ${empToken}` };
-    // Fall back to Clerk
     const token = await getToken();
     return { Authorization: `Bearer ${token}` };
   };
@@ -186,7 +186,7 @@ export default function EmployeesPage() {
       );
       setEmployees((prev) => prev.map((e) => (e.id === emp.id ? data.employee : e)));
       toast.success(data.employee.isActive ? 'Employee activated' : 'Employee deactivated');
-    } catch (err) {
+    } catch {
       toast.error('Failed to update status');
     }
   };
@@ -199,7 +199,7 @@ export default function EmployeesPage() {
       setEmployees((prev) => prev.filter((e) => e.id !== deleteId));
       toast.success('Employee deleted');
       setDeleteId(null);
-    } catch (err) {
+    } catch {
       toast.error('Failed to delete employee');
     }
   };
@@ -236,6 +236,7 @@ export default function EmployeesPage() {
           </button>
         </div>
       </div>
+
       {/* Table */}
       {loading ? (
         <div className="flex items-center justify-center py-20 gap-2 text-slate-400">
@@ -286,15 +287,11 @@ export default function EmployeesPage() {
                             : 'bg-blue-100 text-blue-700'
                         }`}
                       >
-                        {emp.role === 'STORE_OWNER' ? (
-                          <ShieldCheck size={11} />
-                        ) : (
-                          <ShieldAlert size={11} />
-                        )}
+                        {emp.role === 'STORE_OWNER' ? <ShieldCheck size={11} /> : <ShieldAlert size={11} />}
                         {emp.role === 'STORE_OWNER' ? 'Store Owner' : 'Employee'}
                       </span>
                     </td>
-                    <td className="px-5 py-4 max-w-[200px]">
+                    <td className="px-5 py-4 max-w-[220px]">
                       <PermissionBadge permissions={emp.permissions} />
                     </td>
                     <td className="px-5 py-4">
@@ -306,22 +303,12 @@ export default function EmployeesPage() {
                             : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
                         }`}
                       >
-                        {emp.isActive ? (
-                          <>
-                            <UserCheck size={11} /> Active
-                          </>
-                        ) : (
-                          <>
-                            <UserX size={11} /> Inactive
-                          </>
-                        )}
+                        {emp.isActive ? <><UserCheck size={11} /> Active</> : <><UserX size={11} /> Inactive</>}
                       </button>
                     </td>
                     <td className="px-5 py-4 text-xs text-slate-400">
                       {new Date(emp.createdAt).toLocaleDateString('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
+                        day: '2-digit', month: 'short', year: 'numeric',
                       })}
                     </td>
                     <td className="px-5 py-4">
@@ -349,8 +336,8 @@ export default function EmployeesPage() {
           </div>
         </div>
       )}
-      {/* // app/store/employees/page.jsx — ONLY the modal section replacement
-       // Replace the modal div starting from "Create / Edit Modal" with this: */}
+
+      {/* Create / Edit Modal */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-8">
@@ -367,7 +354,7 @@ export default function EmployeesPage() {
               </button>
             </div>
 
-            {/* Modal Body — NOT scrollable inside, full height shown */}
+            {/* Modal Body */}
             <div className="p-6 space-y-5">
               {/* Name */}
               <div>
@@ -397,9 +384,7 @@ export default function EmployeesPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
                   Password{' '}
                   {editingEmployee && (
-                    <span className="text-slate-400 font-normal text-xs">
-                      (leave blank to keep current)
-                    </span>
+                    <span className="text-slate-400 font-normal text-xs">(leave blank to keep current)</span>
                   )}
                 </label>
                 <div className="relative">
@@ -433,12 +418,10 @@ export default function EmployeesPage() {
                 </select>
               </div>
 
-              {/* Permissions — always fully visible, no scroll */}
+              {/* Permissions — only for EMPLOYEE role */}
               {form.role === 'EMPLOYEE' && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-3">
-                    Permissions
-                  </label>
+                  <label className="block text-sm font-medium text-slate-700 mb-3">Permissions</label>
                   <div className="grid grid-cols-1 gap-2.5">
                     {ALL_PERMISSIONS.map((perm) => (
                       <div
@@ -482,7 +465,7 @@ export default function EmployeesPage() {
               )}
             </div>
 
-            {/* Modal Footer — sticky at bottom */}
+            {/* Modal Footer */}
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-white rounded-b-2xl">
               <button
                 onClick={() => setModalOpen(false)}
@@ -502,6 +485,7 @@ export default function EmployeesPage() {
           </div>
         </div>
       )}
+
       {/* Delete Confirm */}
       {deleteId && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">

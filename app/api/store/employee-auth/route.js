@@ -5,7 +5,13 @@ import { NextResponse } from 'next/server';
 
 export async function GET(request) {
   try {
+    // Debug: log what header we receive
+    const authHeader = request.headers.get('authorization') || '';
+    console.log('employee-auth: Authorization header:', authHeader ? 'PRESENT' : 'MISSING');
+    console.log('employee-auth: Header value:', authHeader.slice(0, 30) + '...');
+
     const decoded = verifyEmployeeToken(request);
+    console.log('employee-auth: decoded token:', decoded ? 'OK' : 'FAILED');
 
     if (!decoded) {
       return NextResponse.json(
@@ -14,7 +20,7 @@ export async function GET(request) {
       );
     }
 
-    // Always re-verify from DB — catches deactivated accounts
+    // Re-verify from DB
     const dbEmployee = await prisma.employee.findUnique({
       where: { id: decoded.id },
       select: {
@@ -29,7 +35,10 @@ export async function GET(request) {
     });
 
     if (!dbEmployee) {
-      return NextResponse.json({ valid: false, error: 'Account not found' }, { status: 404 });
+      return NextResponse.json(
+        { valid: false, error: 'Account not found' },
+        { status: 404 }
+      );
     }
 
     if (!dbEmployee.isActive) {
@@ -57,6 +66,9 @@ export async function GET(request) {
     });
   } catch (error) {
     console.error('GET /api/store/employee-auth error:', error);
-    return NextResponse.json({ valid: false, error: error.message }, { status: 500 });
+    return NextResponse.json(
+      { valid: false, error: error.message },
+      { status: 500 }
+    );
   }
 }
