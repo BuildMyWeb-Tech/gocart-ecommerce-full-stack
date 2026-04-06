@@ -1,25 +1,18 @@
 // middleware.ts
-import { clerkMiddleware, getAuth } from '@clerk/nextjs/server';
+import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-
-// Routes that employee JWT can access (no Clerk needed)
-const EMPLOYEE_ROUTES = ['/api/employee/login'];
-
-// Public routes — no auth needed at all
-const PUBLIC_ROUTES = ['/api/employee/login', '/employee/login'];
 
 export default clerkMiddleware((auth, req: NextRequest) => {
   const { pathname } = req.nextUrl;
 
-  // Always allow public routes
-  if (PUBLIC_ROUTES.some((r) => pathname.startsWith(r))) {
-    return NextResponse.next();
-  }
-
-  // Employee-only API routes: just let them through,
-  // each route handler verifies the JWT itself
-  if (pathname.startsWith('/api/employee/')) {
+  // ── All employee routes bypass Clerk completely ─────────────
+  if (
+    pathname.startsWith('/employee') ||
+    pathname.startsWith('/api/employee/') ||
+    pathname.startsWith('/api/auth/store-login') ||
+    pathname.startsWith('/api/store/employee-auth')
+  ) {
     return NextResponse.next();
   }
 

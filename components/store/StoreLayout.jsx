@@ -12,16 +12,19 @@ import axios from 'axios';
 const StoreLayout = ({ children }) => {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
-  const [isSeller, setIsSeller] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [storeInfo, setStoreInfo] = useState(null);
+  const [isSeller, setIsSeller]           = useState(false);
+  const [loading, setLoading]             = useState(true);
+  const [storeInfo, setStoreInfo]         = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [employeeSession, setEmployeeSession] = useState(null);
 
   const fetchAccess = async () => {
     try {
-      // ── Priority 1: Employee/Owner JWT in localStorage ─────────
-      const empToken = typeof window !== 'undefined' ? localStorage.getItem('employeeToken') : null;
+      // ── PRIORITY 1: Employee JWT ALWAYS wins over Clerk ────────
+      const empToken =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('employeeToken')
+          : null;
 
       if (empToken) {
         try {
@@ -31,26 +34,30 @@ const StoreLayout = ({ children }) => {
 
           if (data?.valid && data?.store) {
             setStoreInfo(data.store);
-            setEmployeeSession(data.employee);
+            setEmployeeSession(data.employee); // from DB — always fresh
             setIsSeller(true);
-            return;
+            setLoading(false);
+            return; // ← STOP. Don't touch Clerk at all.
           }
         } catch {
-          // Token invalid — clear it and fall through
+          // invalid token
         }
+        // Token failed — clear and fall through to Clerk
         localStorage.removeItem('employeeToken');
         localStorage.removeItem('employeeData');
       }
 
-      // ── Priority 2: Clerk store owner ──────────────────────────
+      // ── PRIORITY 2: Clerk store owner (only if no emp token) ───
       if (!isSignedIn) {
         setIsSeller(false);
+        setLoading(false);
         return;
       }
 
       const token = await getToken();
       if (!token) {
         setIsSeller(false);
+        setLoading(false);
         return;
       }
 
@@ -60,7 +67,7 @@ const StoreLayout = ({ children }) => {
 
       setIsSeller(data.isSeller || false);
       setStoreInfo(data.storeInfo || data.store || null);
-      setEmployeeSession(null);
+      setEmployeeSession(null); // Clerk owner — no employee session
     } catch (error) {
       console.error('StoreLayout auth error:', error);
       setIsSeller(false);
@@ -90,9 +97,7 @@ const StoreLayout = ({ children }) => {
 
   useEffect(() => {
     document.body.style.overflow = mobileMenuOpen ? 'hidden' : 'auto';
-    return () => {
-      document.body.style.overflow = 'auto';
-    };
+    return () => { document.body.style.overflow = 'auto'; };
   }, [mobileMenuOpen]);
 
   if (!isLoaded || loading) return <Loading />;
@@ -129,10 +134,7 @@ const StoreLayout = ({ children }) => {
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-slate-100/30 to-transparent rounded-full translate-y-1/2 -translate-x-1/2 z-0 pointer-events-none" />
             <div className="relative z-10 p-5 lg:pl-12 lg:pt-12">{children}</div>
             <div className="pb-4 text-center text-xs text-slate-400 relative z-10">
-              <p>
-                © {new Date().getFullYear()} {storeInfo?.name || 'Store Dashboard'} • All Rights
-                Reserved
-              </p>
+              <p>© {new Date().getFullYear()} {storeInfo?.name || 'Store Dashboard'} • All Rights Reserved</p>
             </div>
           </div>
         </div>
@@ -140,7 +142,6 @@ const StoreLayout = ({ children }) => {
     );
   }
 
-  // Access denied
   return (
     <div className="min-h-screen flex flex-col items-center justify-center text-center px-6 bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-md bg-white p-8 rounded-2xl shadow-lg border border-slate-200">

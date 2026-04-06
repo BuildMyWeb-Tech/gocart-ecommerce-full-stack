@@ -174,7 +174,10 @@ export default function Dashboard() {
 
   // ── Unified auth header: employee JWT first, then Clerk ──────────
   const getAuthHeader = async () => {
-    const empToken = typeof window !== 'undefined' ? localStorage.getItem('employeeToken') : null;
+    const empToken =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('employeeToken')
+        : null;
     if (empToken) return { Authorization: `Bearer ${empToken}` };
     const token = await getToken();
     return { Authorization: `Bearer ${token}` };

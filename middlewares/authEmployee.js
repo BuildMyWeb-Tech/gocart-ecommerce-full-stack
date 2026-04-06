@@ -1,28 +1,30 @@
 // middlewares/authEmployee.js
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'employee_jwt_secret_kingcart';
+// Must match exactly what login uses
+const JWT_SECRET = process.env.JWT_SECRET || 'employee_jwt_secret_kingcart_2024';
 
-/**
- * Verifies employee JWT from Authorization header.
- * Returns decoded payload { id, role, storeId, permissions } or null.
- */
 export function verifyEmployeeToken(request) {
-try {
-    const authHeader = request.headers.get('authorization') || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  try {
+    const authHeader =
+      request.headers.get
+        ? request.headers.get('authorization') || ''   // Next.js Request
+        : request.headers?.authorization || '';         // plain object
+
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : null;
+
     if (!token) return null;
+
     const decoded = jwt.verify(token, JWT_SECRET);
     return decoded;
-  } catch {
+  } catch (err) {
+    console.error('verifyEmployeeToken error:', err.message);
     return null;
   }
 }
 
-/**
- * Checks if employee has a specific permission.
- * STORE_OWNER and ADMIN have all permissions.
- */
 export function hasPermission(employee, permission) {
   if (!employee) return false;
   if (employee.role === 'STORE_OWNER' || employee.role === 'ADMIN') return true;
