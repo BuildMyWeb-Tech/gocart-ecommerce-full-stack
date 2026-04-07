@@ -51,14 +51,22 @@ model Product {
   updatedAt   DateTime    @updatedAt
   keyFeatures String[]    @default([])
   createdBy   String      @default("STORE")
+
+  // ── POS / Billing fields ──────────────────────────────────────
+  barcode     String?     @unique
+  sku         String?
+
   inventory   Inventory[]
   orderItems  OrderItem[]
+  billItems   BillItem[]
   store       Store?      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   rating      Rating[]
 
   @@index([storeId])
   @@index([createdBy])
   @@index([inStock])
+  @@index([barcode])
+  @@index([sku])
 }
 
 model Inventory {
@@ -188,11 +196,53 @@ model Store {
   Order       Order[]
   Product     Product[]
   Sale        Sale[]
+  Bill        Bill[]
   user        User        @relation(fields: [userId], references: [id])
 
-  // NEW RELATION
   StoreSettings StoreSettings?
 }
+
+// ── POS Billing Models ────────────────────────────────────────────────────────
+
+model Bill {
+  id          String     @id @default(cuid())
+  billNumber  String
+  storeId     String
+  subtotal    Float
+  discount    Float      @default(0)
+  taxAmount   Float      @default(0)
+  total       Float
+  paymentMode String     @default("CASH")
+  note        String?
+  createdAt   DateTime   @default(now())
+
+  items       BillItem[]
+  store       Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([createdAt])
+  @@index([billNumber])
+  @@index([storeId, createdAt])
+}
+
+model BillItem {
+  id        String  @id @default(cuid())
+  billId    String
+  productId String
+  name      String
+  price     Float
+  quantity  Int
+  discount  Float   @default(0)
+  total     Float
+
+  bill    Bill    @relation(fields: [billId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([billId])
+  @@index([productId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Sale {
   id          String     @id @default(cuid())
