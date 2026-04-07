@@ -83,10 +83,7 @@ export async function POST(request) {
     }
     if (!storeId) {
       return NextResponse.json(
-        {
-          error:
-            'This product is a global catalogue item and cannot be purchased through a store checkout.',
-        },
+        { error: 'This product is a global catalogue item and cannot be purchased through a store checkout.' },
         { status: 400 }
       );
     }
@@ -96,10 +93,7 @@ export async function POST(request) {
       const itemStoreId = item.storeId ?? null;
       if (itemStoreId && itemStoreId !== storeId) {
         return NextResponse.json(
-          {
-            error:
-              'Your cart contains products from multiple stores. Please purchase from one store at a time.',
-          },
+          { error: 'Your cart contains products from multiple stores. Please purchase from one store at a time.' },
           { status: 400 }
         );
       }
@@ -113,6 +107,43 @@ export async function POST(request) {
     if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 400 });
     if (!store.isActive)
       return NextResponse.json({ error: 'This store is currently inactive' }, { status: 400 });
+
+    // ── PRE-ORDER STOCK VALIDATION ────────────────────────────────
+    // Fetch live stock for all items in one query — prevents overselling
+    const productIds = items.map((item) => item.id);
+    const liveProducts = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: { id: true, name: true, quantity: true, inStock: true },
+    });
+
+    const stockMap = {};
+    liveProducts.forEach((p) => { stockMap[p.id] = p; });
+
+    const stockErrors = [];
+    for (const item of items) {
+      const live = stockMap[item.id];
+      if (!live) {
+        stockErrors.push(`Product "${item.name || item.id}" not found`);
+        continue;
+      }
+      if (!live.inStock || live.quantity < item.quantity) {
+        if (live.quantity === 0) {
+          stockErrors.push(`"${live.name}" is out of stock`);
+        } else {
+          stockErrors.push(
+            `"${live.name}" only has ${live.quantity} in stock, but you requested ${item.quantity}`
+          );
+        }
+      }
+    }
+
+    if (stockErrors.length > 0) {
+      return NextResponse.json(
+        { error: stockErrors.join('. ') },
+        { status: 400 }
+      );
+    }
+    // ── END STOCK VALIDATION ──────────────────────────────────────
 
     // ── Resolve coupon ────────────────────────────────────────────
     let couponData = {};
@@ -131,7 +162,7 @@ export async function POST(request) {
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const total = isCouponUsed ? subtotal - (subtotal * discount) / 100 : subtotal;
 
-    // ── Create order + initial timeline in one transaction ────────
+    // ── Create order + deduct stock atomically ────────────────────
     const order = await prisma.$transaction(async (tx) => {
       const newOrder = await tx.order.create({
         data: {
@@ -164,19 +195,35 @@ export async function POST(request) {
         },
       });
 
-      // ── Deduct inventory ──────────────────────────────────────
+      // ── Deduct inventory atomically ───────────────────────────
+      // Re-check inside transaction to handle concurrent orders
       for (const item of items) {
         const product = await tx.product.findUnique({
           where: { id: item.id },
-          select: { quantity: true },
+          select: { quantity: true, name: true },
         });
-        if (product) {
-          const newQty = Math.max(0, product.quantity - item.quantity);
-          await tx.product.update({
-            where: { id: item.id },
-            data: { quantity: newQty, inStock: newQty > 0 },
-          });
+
+        if (!product || product.quantity < item.quantity) {
+          // Throw to rollback the entire transaction
+          throw new Error(
+            `Insufficient stock for "${product?.name || item.id}". ` +
+            `Available: ${product?.quantity ?? 0}, Requested: ${item.quantity}`
+          );
         }
+
+        const newQty = product.quantity - item.quantity;
+
+        // Update product quantity + inStock flag
+        await tx.product.update({
+          where: { id: item.id },
+          data: { quantity: newQty, inStock: newQty > 0 },
+        });
+
+        // Keep Inventory table in sync
+        await tx.inventory.updateMany({
+          where: { productId: item.id, storeId },
+          data: { quantity: newQty },
+        });
       }
 
       return newOrder;
