@@ -24,6 +24,8 @@ async function resolveRole(request) {
 // Public/User → all inStock products
 // Admin       → ALL products
 // Store       → admin global + their own products
+// ?search=    → fast filter on name + barcode + sku (indexed)
+// ?limit=N    → max results (default 50, POS cache uses 500)
 export async function GET(request) {
   try {
     const { role, storeId } = await resolveRole(request);
@@ -32,6 +34,7 @@ export async function GET(request) {
     const category = searchParams.get('category');
     const search = searchParams.get('search');
     const filterStoreId = searchParams.get('storeId');
+    const limit = Math.min(500, parseInt(searchParams.get('limit') || '50'));
 
     let where = {};
 
@@ -46,10 +49,13 @@ export async function GET(request) {
     if (category) where.category = { has: category };
 
     if (search) {
+      const q = search.trim();
+      // Search name, barcode, sku — barcode/sku use exact-ish match for speed
       const searchCondition = {
         OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { description: { contains: search, mode: 'insensitive' } },
+          { name: { contains: q, mode: 'insensitive' } },
+          { barcode: { contains: q, mode: 'insensitive' } },
+          { sku: { contains: q, mode: 'insensitive' } },
         ],
       };
       if (where.OR) {
@@ -63,13 +69,27 @@ export async function GET(request) {
 
     const products = await prisma.product.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        name: true,
+        mrp: true,
+        price: true,
+        images: true,
+        category: true,
+        quantity: true,
+        inStock: true,
+        storeId: true,
+        barcode: true,
+        sku: true,
+        createdBy: true,
+        createdAt: true,
         rating: {
           select: { id: true, rating: true, review: true, userId: true, createdAt: true },
         },
         store: { select: { name: true, username: true, logo: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
 
     const productsWithBadge = products.map((p) => ({
@@ -168,12 +188,9 @@ export async function POST(request) {
 }
 
 // ── PUT: Update any product ───────────────────────────────────────
-// Admin  → can update any product + syncs Inventory table
-// Store  → can only update their own
 export async function PUT(request) {
   try {
     const { role, storeId } = await resolveRole(request);
-
     if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
@@ -190,7 +207,14 @@ export async function PUT(request) {
     const body = await request.json();
     const { name, description, mrp, price, quantity, category, existingImages, keyFeatures } = body;
 
-    if (!name || !description || !mrp || !price || !Array.isArray(category) || category.length === 0) {
+    if (
+      !name ||
+      !description ||
+      !mrp ||
+      !price ||
+      !Array.isArray(category) ||
+      category.length === 0
+    ) {
       return NextResponse.json({ error: 'Missing product details' }, { status: 400 });
     }
 
@@ -203,9 +227,6 @@ export async function PUT(request) {
 
     const newQty = Number(quantity) || 0;
 
-    // ── Update product + sync Inventory atomically ────────────────
-    // This ensures store panel Inventory page always shows correct stock
-    // when admin edits a product quantity
     const updated = await prisma.$transaction(async (tx) => {
       const prod = await tx.product.update({
         where: { id: productId },
@@ -222,19 +243,11 @@ export async function PUT(request) {
         },
       });
 
-      // Sync inventory for store products
       if (existing.storeId) {
         await tx.inventory.upsert({
-          where: {
-            productId_storeId: { productId, storeId: existing.storeId },
-          },
+          where: { productId_storeId: { productId, storeId: existing.storeId } },
           update: { quantity: newQty },
-          create: {
-            productId,
-            storeId: existing.storeId,
-            quantity: newQty,
-            lowStock: 10,
-          },
+          create: { productId, storeId: existing.storeId, quantity: newQty, lowStock: 10 },
         });
       }
 
@@ -252,7 +265,6 @@ export async function PUT(request) {
 export async function DELETE(request) {
   try {
     const { role, storeId } = await resolveRole(request);
-
     if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
 
     const { searchParams } = new URL(request.url);

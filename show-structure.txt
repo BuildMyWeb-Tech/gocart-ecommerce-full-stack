@@ -18,28 +18,6 @@
    📁 server
       📁 app
          📁 (public)
-            📁 cart
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
-            📁 create-store
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
             📁 orders
                📁 page
                   📄 app-build-manifest.json
@@ -61,85 +39,8 @@
             📄 page.js
             📄 page.js.map
             📄 page_client-reference-manifest.js
-            📁 product
-               📁 [productId]
-                  📁 page
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 next-font-manifest.json
-                     📄 react-loadable-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 page.js
-                  📄 page.js.map
-                  📄 page_client-reference-manifest.js
-            📁 shop
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
-            📁 wishlist
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
          📁 admin
-            📁 approve
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
             📁 inventory
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
-            📁 manage-product
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
-            📁 page
-               📄 app-build-manifest.json
-               📄 app-paths-manifest.json
-               📄 build-manifest.json
-               📄 next-font-manifest.json
-               📄 react-loadable-manifest.json
-               📄 server-reference-manifest.json
-            📄 page.js
-            📄 page.js.map
-            📄 page_client-reference-manifest.js
-            📁 stores
                📁 page
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -161,34 +62,7 @@
                📄 route.js.map
                📄 route_client-reference-manifest.js
             📁 admin
-               📁 approve-store
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 dashboard
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
                📁 is-admin
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 stores
                   📁 route
                      📄 app-build-manifest.json
                      📄 app-paths-manifest.json
@@ -217,15 +91,6 @@
                📄 route.js.map
                📄 route_client-reference-manifest.js
             📁 categories
-               📁 all
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
                📁 route
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -234,44 +99,16 @@
                📄 route.js
                📄 route.js.map
                📄 route_client-reference-manifest.js
-            📁 employee
-               📁 create
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 delete
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 list
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 update
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
             📁 inventory
+               📁 deduct
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
                📁 route
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -316,34 +153,6 @@
                📄 route.js
                📄 route.js.map
                📄 route_client-reference-manifest.js
-            📁 reports
-               📁 sales-trend
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 summary
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 top-products
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
             📁 settings
                📁 route
                   📄 app-build-manifest.json
@@ -354,16 +163,7 @@
                📄 route.js.map
                📄 route_client-reference-manifest.js
             📁 store
-               📁 create
-                  📁 route
-                     📄 app-build-manifest.json
-                     📄 app-paths-manifest.json
-                     📄 build-manifest.json
-                     📄 server-reference-manifest.json
-                  📄 route.js
-                  📄 route.js.map
-                  📄 route_client-reference-manifest.js
-               📁 dashboard
+               📁 billing
                   📁 route
                      📄 app-build-manifest.json
                      📄 app-paths-manifest.json
@@ -409,6 +209,17 @@
                   📄 route.js.map
                   📄 route_client-reference-manifest.js
          📁 employee
+            📁 billing
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
             📁 dashboard
                📁 page
                   📄 app-build-manifest.json
@@ -453,17 +264,6 @@
                📄 page.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
-            📁 reports
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
          📁 favicon.ico
             📁 route
                📄 app-build-manifest.json
@@ -483,29 +283,7 @@
                📄 page.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
-            📁 analytics
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
-            📁 categories
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
-            📁 employees
+            📁 billing
                📁 page
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -517,17 +295,6 @@
                📄 page.js.map
                📄 page_client-reference-manifest.js
             📁 inventory
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
-            📁 login
                📁 page
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -560,27 +327,6 @@
                📄 page.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
-            📁 page
-               📄 app-build-manifest.json
-               📄 app-paths-manifest.json
-               📄 build-manifest.json
-               📄 next-font-manifest.json
-               📄 react-loadable-manifest.json
-               📄 server-reference-manifest.json
-            📄 page.js
-            📄 page.js.map
-            📄 page_client-reference-manifest.js
-            📁 settings
-               📁 page
-                  📄 app-build-manifest.json
-                  📄 app-paths-manifest.json
-                  📄 build-manifest.json
-                  📄 next-font-manifest.json
-                  📄 react-loadable-manifest.json
-                  📄 server-reference-manifest.json
-               📄 page.js
-               📄 page.js.map
-               📄 page_client-reference-manifest.js
          📁 _not-found
             📁 page
                📄 app-build-manifest.json
@@ -601,29 +347,6 @@
       📄 middleware-manifest.json
       📄 next-font-manifest.js
       📄 next-font-manifest.json
-      📁 pages
-         📁 _app
-            📄 build-manifest.json
-            📄 client-build-manifest.json
-            📄 next-font-manifest.json
-            📄 pages-manifest.json
-            📄 react-loadable-manifest.json
-         📄 _app.js
-         📄 _app.js.map
-         📁 _document
-            📄 next-font-manifest.json
-            📄 pages-manifest.json
-            📄 react-loadable-manifest.json
-         📄 _document.js
-         📄 _document.js.map
-         📁 _error
-            📄 build-manifest.json
-            📄 client-build-manifest.json
-            📄 next-font-manifest.json
-            📄 pages-manifest.json
-            📄 react-loadable-manifest.json
-         📄 _error.js
-         📄 _error.js.map
       📄 pages-manifest.json
       📄 server-reference-manifest.js
       📄 server-reference-manifest.json
@@ -792,6 +515,8 @@
       📁 store
          📁 ai
             📄 route.js
+         📁 billing
+            📄 route.js
          📁 create
             📄 route.js
          📁 dashboard
@@ -812,6 +537,8 @@
          📄 route.js
    📁 employee
       📁 add-product
+         📄 page.jsx
+      📁 billing
          📄 page.jsx
       📁 categories
          📄 page.jsx
@@ -836,6 +563,8 @@
       📁 add-product
          📄 page.jsx
       📁 analytics
+         📄 page.jsx
+      📁 billing
          📄 page.jsx
       📁 categories
          📄 page.jsx
@@ -944,6 +673,8 @@
       📁 20260329045724_scoped_categories_and_products
          📄 migration.sql
       📁 20260407081333_add_store_settings
+         📄 migration.sql
+      📁 20260407121038_add_billing_and_barcode
          📄 migration.sql
       📄 migration_lock.toml
    📄 schema.prisma
