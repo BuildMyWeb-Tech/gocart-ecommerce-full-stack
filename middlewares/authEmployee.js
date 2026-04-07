@@ -1,19 +1,15 @@
-// middlewares/authEmployee.js
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\middlewares\authEmployee.js
 import jwt from 'jsonwebtoken';
 
-// Must match exactly what login uses
 const JWT_SECRET = process.env.JWT_SECRET || 'employee_jwt_secret_kingcart_2024';
 
 export function verifyEmployeeToken(request) {
   try {
-    const authHeader =
-      request.headers.get
-        ? request.headers.get('authorization') || ''   // Next.js Request
-        : request.headers?.authorization || '';         // plain object
+    const authHeader = request.headers.get
+      ? request.headers.get('authorization') || ''
+      : request.headers?.authorization || '';
 
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7).trim()
-      : null;
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : null;
 
     if (!token) return null;
 
@@ -32,3 +28,5 @@ export function hasPermission(employee, permission) {
 }
 
 export const JWT_SECRET_KEY = JWT_SECRET;
+
+export default verifyEmployeeToken;
