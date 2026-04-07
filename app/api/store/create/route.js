@@ -1,4 +1,4 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\api\store\create\route.js
+// app/api/store/create/route.js
 import imagekit from '@/configs/imageKit';
 import prisma from '@/lib/prisma';
 import { clerkClient, getAuth } from '@clerk/nextjs/server';
@@ -61,19 +61,42 @@ export async function POST(request) {
       transformation: [{ quality: 'auto' }, { format: 'webp' }, { width: '256' }],
     });
 
-    const newStore = await prisma.store.create({
-      data: {
-        userId,
-        name,
-        description,
-        username,
-        address,
-        email,
-        contact,
-        logo,
-        status: 'pending',
-        isActive: false,
-      },
+    // Create store and auto-create default settings in a transaction
+    const { store: newStore } = await prisma.$transaction(async (tx) => {
+      const store = await tx.store.create({
+        data: {
+          userId,
+          name,
+          description,
+          username,
+          address,
+          email,
+          contact,
+          logo,
+          status: 'pending',
+          isActive: false,
+        },
+      });
+
+      // Auto-create default StoreSettings
+      await tx.storeSettings.create({
+        data: {
+          storeId: store.id,
+          storeName: store.name,
+          address: store.address,
+          taxType: 'SINGLE',
+          taxPercent: 18,
+          cgst: 9,
+          sgst: 9,
+          currency: 'INR',
+          showStoreName: true,
+          showGST: true,
+          footerMessage: 'Thank you for shopping with us!',
+          defaultLowStock: 10,
+        },
+      });
+
+      return { store };
     });
 
     return NextResponse.json({

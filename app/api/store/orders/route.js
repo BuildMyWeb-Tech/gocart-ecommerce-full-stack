@@ -5,50 +5,87 @@ import { verifyEmployeeToken } from '@/middlewares/authEmployee';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-// ── Status transition rules ───────────────────────────────────────
 const STORE_ALLOWED_TRANSITIONS = {
-  ORDER_PLACED:     ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED:        ['PROCESSING', 'CANCELLED'],
-  PROCESSING:       ['SHIPPED', 'CANCELLED'],
-  SHIPPED:          ['DELIVERED'],
-  DELIVERED:        ['RETURN_REQUESTED'],
+  ORDER_PLACED: ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED: ['PROCESSING', 'CANCELLED'],
+  PROCESSING: ['SHIPPED', 'CANCELLED'],
+  SHIPPED: ['DELIVERED'],
+  DELIVERED: ['RETURN_REQUESTED'],
   RETURN_REQUESTED: ['RETURNED'],
-  RETURNED:         ['REFUNDED'],
-  CANCELLED:        [],
-  REFUNDED:         [],
+  RETURNED: ['REFUNDED'],
+  CANCELLED: [],
+  REFUNDED: [],
 };
 
 const PRE_SHIPPED_STATUSES = new Set(['ORDER_PLACED', 'CONFIRMED', 'PROCESSING']);
 
 // ── Helper: resolve storeId from employee JWT or Clerk ────────────
 async function resolveStoreId(request) {
-  // Priority 1: Employee JWT
   const emp = verifyEmployeeToken(request);
   if (emp?.storeId) return emp.storeId;
 
-  // Priority 2: Clerk store owner
   const { userId } = getAuth(request);
   if (!userId) return null;
   return authSeller(userId);
 }
 
 // ── Helper: restore inventory on cancel/return ────────────────────
+// FIX: Now updates BOTH Product table AND Inventory table
 async function restoreInventory(tx, orderId) {
-  const orderItems = await tx.orderItem.findMany({
-    where: { orderId },
-    select: { productId: true, quantity: true },
+  // Get order storeId + all items in one query
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      storeId: true,
+      orderItems: {
+        select: { productId: true, quantity: true },
+      },
+    },
   });
 
-  for (const item of orderItems) {
+  if (!order) return;
+
+  for (const item of order.orderItems) {
+    // 1. Get current product quantity
     const product = await tx.product.findUnique({
       where: { id: item.productId },
       select: { quantity: true },
     });
-    if (product) {
-      const newQty = product.quantity + item.quantity;
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { quantity: newQty, inStock: newQty > 0 },
+
+    if (!product) continue;
+
+    const newQty = product.quantity + item.quantity;
+
+    // 2. Update Product table → Manage Products page reads this ✅
+    await tx.product.update({
+      where: { id: item.productId },
+      data: { quantity: newQty, inStock: newQty > 0 },
+    });
+
+    // 3. Update Inventory table → Inventory page reads this ✅
+    //    Use findFirst + update by id (safer than updateMany)
+    const invRecord = await tx.inventory.findFirst({
+      where: {
+        productId: item.productId,
+        storeId: order.storeId,
+      },
+      select: { id: true },
+    });
+
+    if (invRecord) {
+      await tx.inventory.update({
+        where: { id: invRecord.id },
+        data: { quantity: newQty },
+      });
+    } else {
+      // Safety net: create inventory record if missing
+      await tx.inventory.create({
+        data: {
+          productId: item.productId,
+          storeId: order.storeId,
+          quantity: newQty,
+          lowStock: 10,
+        },
       });
     }
   }
@@ -66,23 +103,16 @@ export async function POST(request) {
     const { orderId, status, note } = await request.json();
 
     if (!orderId || !status) {
-      return NextResponse.json(
-        { error: 'orderId and status are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'orderId and status are required' }, { status: 400 });
     }
 
-    // Verify order belongs to this store
     const order = await prisma.order.findFirst({
       where: { id: orderId, storeId },
       select: { id: true, status: true, storeId: true },
     });
 
     if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found or not authorized' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Order not found or not authorized' }, { status: 404 });
     }
 
     const currentStatus = order.status;
@@ -99,7 +129,6 @@ export async function POST(request) {
       );
     }
 
-    // Cancel guard
     if (status === 'CANCELLED' && !PRE_SHIPPED_STATUSES.has(currentStatus)) {
       return NextResponse.json(
         { error: 'Orders can only be cancelled before they are shipped' },
@@ -107,7 +136,6 @@ export async function POST(request) {
       );
     }
 
-    // Transaction: update + timeline + inventory restore
     await prisma.$transaction(async (tx) => {
       await tx.order.update({
         where: { id: orderId },
@@ -123,6 +151,7 @@ export async function POST(request) {
         },
       });
 
+      // Restore stock in BOTH Product + Inventory tables on cancel/return
       if (status === 'CANCELLED' || status === 'RETURNED') {
         await restoreInventory(tx, orderId);
       }
@@ -149,12 +178,11 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const statusFilter = searchParams.get('status');
-    const dateFrom     = searchParams.get('dateFrom');
-    const dateTo       = searchParams.get('dateTo');
-    const page         = parseInt(searchParams.get('page')  || '1',  10);
-    const limit        = parseInt(searchParams.get('limit') || '50', 10);
+    const dateFrom = searchParams.get('dateFrom');
+    const dateTo = searchParams.get('dateTo');
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
 
-    // Build where clause
     const where = { storeId };
 
     if (statusFilter && statusFilter !== 'all') {
@@ -164,17 +192,17 @@ export async function GET(request) {
     if (dateFrom || dateTo) {
       where.createdAt = {};
       if (dateFrom) where.createdAt.gte = new Date(dateFrom);
-      if (dateTo)   where.createdAt.lte = new Date(dateTo);
+      if (dateTo) where.createdAt.lte = new Date(dateTo);
     }
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where,
         include: {
-          user:       true,
-          address:    true,
+          user: true,
+          address: true,
           orderItems: { include: { product: true } },
-          timeline:   { orderBy: { createdAt: 'asc' } },
+          timeline: { orderBy: { createdAt: 'asc' } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,

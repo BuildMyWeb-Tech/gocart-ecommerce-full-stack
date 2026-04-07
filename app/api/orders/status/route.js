@@ -1,14 +1,10 @@
 // app/api/orders/status/route.js
-// PUT /api/orders/status  — update order status (store or admin)
-// GET /api/orders/status  — get allowed next statuses for an order
-
 import prisma from '@/lib/prisma';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import authSeller from '@/middlewares/authSeller';
 import authAdmin from '@/middlewares/authAdmin';
 
-// ── Status transition rules ───────────────────────────────────────
 const STORE_ALLOWED_TRANSITIONS = {
   ORDER_PLACED: ['CONFIRMED', 'CANCELLED'],
   CONFIRMED: ['PROCESSING', 'CANCELLED'],
@@ -29,30 +25,73 @@ const ADMIN_ALLOWED_TRANSITIONS = {
   DELIVERED: ['RETURN_REQUESTED', 'RETURNED', 'REFUNDED'],
   RETURN_REQUESTED: ['RETURNED', 'REFUNDED', 'DELIVERED'],
   RETURNED: ['REFUNDED'],
-  CANCELLED: ['ORDER_PLACED'], // admin can reinstate
+  CANCELLED: ['ORDER_PLACED'],
   REFUNDED: [],
 };
 
-// Statuses before which cancellation is allowed
 const PRE_SHIPPED_STATUSES = new Set(['ORDER_PLACED', 'CONFIRMED', 'PROCESSING']);
 
-// ── Helper: restore inventory ─────────────────────────────────────
+// ── Helper: restore inventory on cancel / return ──────────────────
 async function restoreInventory(tx, orderId) {
-  const orderItems = await tx.orderItem.findMany({
-    where: { orderId },
-    select: { productId: true, quantity: true },
+  // Step 1: Get order with storeId + all order items
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      storeId: true,
+      orderItems: {
+        select: { productId: true, quantity: true },
+      },
+    },
   });
 
-  for (const item of orderItems) {
+  if (!order) return;
+
+  for (const item of order.orderItems) {
+    // Step 2: Get product with its own storeId too (fallback)
     const product = await tx.product.findUnique({
       where: { id: item.productId },
-      select: { quantity: true },
+      select: { quantity: true, storeId: true },
     });
-    if (product) {
-      const newQty = product.quantity + item.quantity;
-      await tx.product.update({
-        where: { id: item.productId },
-        data: { quantity: newQty, inStock: newQty > 0 },
+
+    if (!product) continue;
+
+    const newQty = product.quantity + item.quantity;
+
+    // Step 3: Update Product table (Manage Products page reads this)
+    await tx.product.update({
+      where: { id: item.productId },
+      data: { quantity: newQty, inStock: newQty > 0 },
+    });
+
+    // Step 4: Find the actual inventory record to get the correct storeId
+    // We try order.storeId first, then fall back to product.storeId
+    const storeId = order.storeId || product.storeId;
+    if (!storeId) continue;
+
+    // Step 5: Check if inventory record exists
+    const existingInv = await tx.inventory.findFirst({
+      where: {
+        productId: item.productId,
+        storeId: storeId,
+      },
+      select: { id: true },
+    });
+
+    if (existingInv) {
+      // Update existing inventory record
+      await tx.inventory.update({
+        where: { id: existingInv.id },
+        data: { quantity: newQty },
+      });
+    } else {
+      // Inventory record missing — create it so page is never stale
+      await tx.inventory.create({
+        data: {
+          productId: item.productId,
+          storeId: storeId,
+          quantity: newQty,
+          lowStock: 10,
+        },
       });
     }
   }
@@ -95,7 +134,7 @@ export async function PUT(request) {
 
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 
-    // ── Store isolation: store can only update its own orders ─────
+    // Store can only update its own orders
     if (role === 'STORE' && order.storeId !== storeId) {
       return NextResponse.json({ error: 'Not authorized to update this order' }, { status: 403 });
     }
@@ -107,13 +146,15 @@ export async function PUT(request) {
     if (!allowed.includes(newStatus)) {
       return NextResponse.json(
         {
-          error: `Cannot transition from ${currentStatus} to ${newStatus}. Allowed: ${allowed.join(', ') || 'none'}`,
+          error: `Cannot transition from ${currentStatus} to ${newStatus}. Allowed: ${
+            allowed.join(', ') || 'none'
+          }`,
         },
         { status: 400 }
       );
     }
 
-    // ── Cancel guard: only before SHIPPED ────────────────────────
+    // Only allow cancel before shipped
     if (newStatus === 'CANCELLED' && !PRE_SHIPPED_STATUSES.has(currentStatus)) {
       return NextResponse.json(
         { error: 'Orders can only be cancelled before they are shipped' },
@@ -121,7 +162,7 @@ export async function PUT(request) {
       );
     }
 
-    // ── Run status update in transaction ──────────────────────────
+    // ── Transaction: update status + timeline + restore inventory ─
     const updatedOrder = await prisma.$transaction(async (tx) => {
       // 1. Update order status
       const updated = await tx.order.update({
@@ -129,7 +170,7 @@ export async function PUT(request) {
         data: { status: newStatus },
       });
 
-      // 2. Log timeline
+      // 2. Log timeline entry
       await tx.orderTimeline.create({
         data: {
           orderId,
@@ -139,7 +180,7 @@ export async function PUT(request) {
         },
       });
 
-      // 3. Restore inventory on CANCELLED or RETURNED
+      // 3. Restore stock in BOTH Product + Inventory tables
       if (newStatus === 'CANCELLED' || newStatus === 'RETURNED') {
         await restoreInventory(tx, orderId);
       }
@@ -167,7 +208,9 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get('orderId');
 
-    if (!orderId) return NextResponse.json({ error: 'orderId is required' }, { status: 400 });
+    if (!orderId) {
+      return NextResponse.json({ error: 'orderId is required' }, { status: 400 });
+    }
 
     const isAdmin = await authAdmin(userId);
     const storeId = isAdmin ? null : await authSeller(userId);

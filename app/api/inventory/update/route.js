@@ -1,17 +1,35 @@
 // app/api/inventory/update/route.js
-// PUT /api/inventory/update — manual stock adjustment by store owner
+// PUT /api/inventory/update — manual stock adjustment by store owner (Clerk) or employee (JWT)
 import prisma from '@/lib/prisma';
 import authSeller from '@/middlewares/authSeller';
+import { verifyEmployeeToken, hasPermission } from '@/middlewares/authEmployee';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
+// ── Resolve storeId from any auth source ─────────────────────────
+async function resolveStoreId(request) {
+  const empPayload = verifyEmployeeToken(request);
+  if (empPayload) {
+    // Employees with inventory permission can update stock
+    if (!hasPermission(empPayload, 'inventory')) {
+      return { storeId: null, error: 'No inventory permission' };
+    }
+    return { storeId: empPayload.storeId };
+  }
+
+  const { userId } = getAuth(request);
+  if (!userId) return { storeId: null, error: 'Unauthorized' };
+
+  const storeId = await authSeller(userId);
+  if (!storeId) return { storeId: null, error: 'Not authorized' };
+
+  return { storeId };
+}
+
 export async function PUT(request) {
   try {
-    const { userId } = getAuth(request);
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const storeId = await authSeller(userId);
-    if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    const { storeId, error } = await resolveStoreId(request);
+    if (!storeId) return NextResponse.json({ error: error || 'Unauthorized' }, { status: 401 });
 
     const { productId, quantity, lowStock } = await request.json();
     if (!productId) return NextResponse.json({ error: 'productId required' }, { status: 400 });
@@ -20,11 +38,11 @@ export async function PUT(request) {
 
     const newQty = Math.max(0, Number(quantity));
 
-    // Verify ownership
+    // Verify product belongs to this store
     const product = await prisma.product.findFirst({ where: { id: productId, storeId } });
     if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
 
-    // Upsert inventory + sync product fields
+    // Upsert inventory + sync product fields atomically
     const [inv] = await prisma.$transaction([
       prisma.inventory.upsert({
         where: { productId_storeId: { productId, storeId } },
