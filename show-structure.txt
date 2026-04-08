@@ -39,6 +39,18 @@
             📄 page.js
             📄 page.js.map
             📄 page_client-reference-manifest.js
+            📁 product
+               📁 [productId]
+                  📁 page
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 next-font-manifest.json
+                     📄 react-loadable-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 page.js
+                  📄 page.js.map
+                  📄 page_client-reference-manifest.js
          📁 admin
             📁 inventory
                📁 page
@@ -51,6 +63,27 @@
                📄 page.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
+            📁 manage-product
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
+            📁 page
+               📄 app-build-manifest.json
+               📄 app-paths-manifest.json
+               📄 build-manifest.json
+               📄 next-font-manifest.json
+               📄 react-loadable-manifest.json
+               📄 server-reference-manifest.json
+            📄 page.js
+            📄 page.js.map
+            📄 page_client-reference-manifest.js
          📁 api
             📁 address
                📁 route
@@ -62,6 +95,15 @@
                📄 route.js.map
                📄 route_client-reference-manifest.js
             📁 admin
+               📁 dashboard
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
                📁 is-admin
                   📁 route
                      📄 app-build-manifest.json
@@ -91,6 +133,15 @@
                📄 route.js.map
                📄 route_client-reference-manifest.js
             📁 categories
+               📁 all
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
                📁 route
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -99,6 +150,16 @@
                📄 route.js
                📄 route.js.map
                📄 route_client-reference-manifest.js
+            📁 employee
+               📁 list
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
             📁 inventory
                📁 deduct
                   📁 route
@@ -153,6 +214,34 @@
                📄 route.js
                📄 route.js.map
                📄 route_client-reference-manifest.js
+            📁 reports
+               📁 sales-trend
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
+               📁 summary
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
+               📁 top-products
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
             📁 settings
                📁 route
                   📄 app-build-manifest.json
@@ -164,6 +253,15 @@
                📄 route_client-reference-manifest.js
             📁 store
                📁 billing
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
+               📁 dashboard
                   📁 route
                      📄 app-build-manifest.json
                      📄 app-paths-manifest.json
@@ -283,7 +381,40 @@
                📄 page.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
+            📁 analytics
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
             📁 billing
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
+            📁 employees
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
+            📁 help
                📁 page
                   📄 app-build-manifest.json
                   📄 app-paths-manifest.json
@@ -327,6 +458,27 @@
                📄 page.js
                📄 page.js.map
                📄 page_client-reference-manifest.js
+            📁 page
+               📄 app-build-manifest.json
+               📄 app-paths-manifest.json
+               📄 build-manifest.json
+               📄 next-font-manifest.json
+               📄 react-loadable-manifest.json
+               📄 server-reference-manifest.json
+            📄 page.js
+            📄 page.js.map
+            📄 page_client-reference-manifest.js
+            📁 settings
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
          📁 _not-found
             📁 page
                📄 app-build-manifest.json
@@ -347,6 +499,29 @@
       📄 middleware-manifest.json
       📄 next-font-manifest.js
       📄 next-font-manifest.json
+      📁 pages
+         📁 _app
+            📄 build-manifest.json
+            📄 client-build-manifest.json
+            📄 next-font-manifest.json
+            📄 pages-manifest.json
+            📄 react-loadable-manifest.json
+         📄 _app.js
+         📄 _app.js.map
+         📁 _document
+            📄 next-font-manifest.json
+            📄 pages-manifest.json
+            📄 react-loadable-manifest.json
+         📄 _document.js
+         📄 _document.js.map
+         📁 _error
+            📄 build-manifest.json
+            📄 client-build-manifest.json
+            📄 next-font-manifest.json
+            📄 pages-manifest.json
+            📄 react-loadable-manifest.json
+         📄 _error.js
+         📄 _error.js.map
       📄 pages-manifest.json
       📄 server-reference-manifest.js
       📄 server-reference-manifest.json
@@ -357,34 +532,7 @@
          📄 _ssgManifest.js
       📁 media
          📄 1b99372b3eaef0c8-s.p.758e15a8.woff2
-         📄 b2ea385cb5ae8625-s.866357a4.woff2
-         📄 favicon.73101d10.ico
-         📄 gs_logo.d679ec48.jpg
-         📄 happy_store.dd5078a4.webp
-         📄 hero_model_img.03e381f0.png
-         📄 hero_product_img1.7ccf9b66.png
-         📄 hero_product_img2.1089b4bb.png
-         📄 img_1.e3641582.jpg
-         📄 img_2.bb03df15.jpg
-         📄 img_3.7b759cf0.jpg
-         📄 img_4.03a2f2a7.jpg
-         📄 img_5.f060092e.jpg
-         📄 product_img1.6b8ce3d5.png
-         📄 product_img10.337d3b29.png
-         📄 product_img11.a0320509.png
-         📄 product_img12.86ffddfa.png
-         📄 product_img2.6290f681.png
-         📄 product_img3.c1c5e778.png
-         📄 product_img4.98741d4f.png
-         📄 product_img5.23cf72a6.png
-         📄 product_img6.6fb506c6.png
-         📄 product_img7.9327995c.png
-         📄 product_img8.864a8426.png
-         📄 product_img9.eff24dda.png
-         📄 profile_pic1.c5cf3cfe.jpg
-         📄 profile_pic2.b15edadf.jpg
-         📄 profile_pic3.3159d899.jpg
-         📄 upload_area.ccf1e6fd.svg
+
    📄 trace
    📁 types
       📄 routes.d.ts
@@ -585,7 +733,7 @@
    📄 StoreProvider.js
 📁 assets
    📄 assets.js
-   📄 upload_area.svg
+
 📄 checkdb.mjs
 📄 checkSales.mjs
 📁 components
@@ -624,6 +772,8 @@
    📄 Rating.jsx
    📄 RatingModal.jsx
    📁 store
+      📄 BillFormatter.js
+      📄 PrintService.js
       📄 StoreLayout.jsx
       📄 StoreNavbar.jsx
       📄 StoreSidebar.jsx
