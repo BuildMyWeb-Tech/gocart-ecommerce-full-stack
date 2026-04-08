@@ -2,17 +2,26 @@
 /**
  * /app/employee/billing/page.jsx
  * ─────────────────────────────────────────────────────────────
- * Employee POS Billing — v4
+ * Employee POS Billing — v5
  *
- * ✅ All v3 features preserved
- * ✅ BARCODE INTEGRATION (NEW)
- *    - USB scanner acts as keyboard → auto-detects Enter
- *    - BarcodeInput component with persistent focus lock
- *    - useBarcodeScanner hook with <1s local cache lookup
- *    - Duplicate scan → existing confirmation modal
- *    - Unknown barcode → Create Product modal
- *    - Fully offline compatible (IndexedDB / localStorage cache)
- *    - No mouse required; seamless cashier flow
+ * ✅ All v4 features preserved (barcode, offline, IndexedDB, sync)
+ * ✅ QZ TRAY THERMAL PRINT INTEGRATION (NEW)
+ *    - Direct USB thermal print via QZ Tray (no browser dialog)
+ *    - ESC/POS commands for 80mm paper
+ *    - Auto-connect to QZ Tray on mount
+ *    - Printer selector (lists all Windows printers)
+ *    - Saves selected printer to localStorage
+ *    - QZ status indicator in top bar (green/red/yellow)
+ *    - Graceful fallback to browser print if QZ not running
+ *    - Reprint works with same QZ → browser fallback logic
+ *    - Print settings modal (printer name, test print button)
+ * ─────────────────────────────────────────────────────────────
+ *
+ * SETUP:
+ * 1. npm install qz-tray
+ * 2. Download QZ Tray from https://qz.io/download/ and install on Windows
+ * 3. Run QZ Tray (look for icon in system tray)
+ * 4. Select your printer in the Print Settings modal (⚙ icon in top bar)
  * ─────────────────────────────────────────────────────────────
  */
 
@@ -49,12 +58,18 @@ import {
   AlertTriangle,
   ScanLine,
   PackagePlus,
+  Settings,
+  Plug,
+  PlugZap,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { calculateTax, formatCurrency } from '@/lib/storeSettings';
 
 // ─── localStorage keys ────────────────────────────────────────────────────────
 const LS_PRODUCTS = 'emp_pos_products_cache';
 const LS_PRODUCTS_TS = 'emp_pos_products_cache_ts';
+const LS_PRINTER_NAME = 'emp_pos_printer_name';
 const PRODUCT_CACHE_TTL = 10 * 60 * 1000;
 
 // ─── IndexedDB ────────────────────────────────────────────────────────────────
@@ -157,7 +172,6 @@ function searchLocal(products, query) {
     .slice(0, 8);
 }
 
-// ─── Barcode lookup (instant, local-first) ────────────────────────────────────
 function findProductByBarcode(products, barcode) {
   if (!barcode) return null;
   const b = barcode.trim().toLowerCase();
@@ -191,41 +205,337 @@ const PM_COLORS = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ══ QZ TRAY PRINT ENGINE ════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ESC = '\x1B';
+const GS = '\x1D';
+
+const ESCPOS = {
+  INIT: ESC + '@',
+  ALIGN_LEFT: ESC + 'a\x00',
+  ALIGN_CENTER: ESC + 'a\x01',
+  BOLD_ON: ESC + 'E\x01',
+  BOLD_OFF: ESC + 'E\x00',
+  DOUBLE_SIZE: GS + '!\x11',
+  NORMAL_SIZE: GS + '!\x00',
+  CUT: GS + 'V\x41\x00',
+  FEED_3: ESC + 'd\x03',
+  FEED_1: ESC + 'd\x01',
+  LINE_SPACING: ESC + '3\x20',
+};
+
+const PAPER_COLS = 48;
+
+function padR(str, w) {
+  return String(str ?? '')
+    .slice(0, w)
+    .padEnd(w);
+}
+function padL(str, w) {
+  return String(str ?? '')
+    .slice(0, w)
+    .padStart(w);
+}
+function centerStr(str, w) {
+  const s = String(str ?? '').slice(0, w);
+  const sp = Math.max(0, Math.floor((w - s.length) / 2));
+  return ' '.repeat(sp) + s;
+}
+function twoCol(label, val, w = PAPER_COLS) {
+  const v = String(val);
+  const maxL = w - v.length - 1;
+  return String(label).slice(0, maxL).padEnd(maxL) + ' ' + v;
+}
+
+function fmtMoney(n, currency = 'INR') {
+  const num = parseFloat(n || 0);
+  return currency === 'INR' ? `Rs.${num.toFixed(2)}` : `${currency}${num.toFixed(2)}`;
+}
+
+function buildESCPOS(bill, settings = {}) {
+  const s = { ...settings, ...(bill.settings || {}) };
+  const cur = s.currency || 'INR';
+  const fmt = (n) => fmtMoney(n, cur);
+  const W = PAPER_COLS;
+  const div = (c = '-') => c.repeat(W);
+
+  const dateStr = new Date(bill.createdAt || Date.now()).toLocaleString('en-IN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  let out = '';
+  out += ESCPOS.INIT;
+  out += ESCPOS.LINE_SPACING;
+
+  // Header
+  out += ESCPOS.ALIGN_CENTER;
+  if (s.showStoreName !== false && s.storeName) {
+    out += ESCPOS.BOLD_ON + ESCPOS.DOUBLE_SIZE;
+    out += s.storeName + '\n';
+    out += ESCPOS.NORMAL_SIZE + ESCPOS.BOLD_OFF;
+  }
+  if (s.address) out += s.address + '\n';
+  if (s.showGST && s.gstNumber) out += 'GST: ' + s.gstNumber + '\n';
+  out += '\n';
+
+  // Bill info
+  out += ESCPOS.ALIGN_LEFT;
+  out += div() + '\n';
+  out += ESCPOS.BOLD_ON + 'Bill No : ' + bill.billNumber + '\n' + ESCPOS.BOLD_OFF;
+  out += 'Date    : ' + dateStr + '\n';
+  out += 'Payment : ' + bill.paymentMode + '\n';
+  if (bill.note) out += 'Note    : ' + String(bill.note).slice(0, 36) + '\n';
+  out += div() + '\n';
+
+  // Items header
+  out += ESCPOS.BOLD_ON;
+  out += padR('Item', 22) + padR('Qty', 4) + padL('Price', 10) + padL('Total', 10) + '\n';
+  out += ESCPOS.BOLD_OFF;
+  out += div() + '\n';
+
+  // Items
+  (bill.items || []).forEach((item) => {
+    const name = padR(item.name, 22);
+    const qty = padR(String(item.quantity), 4);
+    const price = padL(fmt(item.price), 10);
+    const total = padL(fmt(item.total), 10);
+    out += name + qty + price + total + '\n';
+    if (item.name.length > 22) out += '  ' + item.name.slice(22, 46) + '\n';
+  });
+
+  out += div() + '\n';
+
+  // Totals
+  out += twoCol('Subtotal:', fmt(bill.subtotal)) + '\n';
+  if (parseFloat(bill.discount) > 0) {
+    out += ESCPOS.BOLD_ON + twoCol('Discount:', '-' + fmt(bill.discount)) + '\n' + ESCPOS.BOLD_OFF;
+  }
+  if (parseFloat(bill.taxAmount) > 0) {
+    if (s.taxType === 'GST_SPLIT') {
+      out += twoCol(`CGST (${s.cgst}%):`, fmt(bill.taxAmount / 2)) + '\n';
+      out += twoCol(`SGST (${s.sgst}%):`, fmt(bill.taxAmount / 2)) + '\n';
+    } else {
+      out += twoCol(`Tax (${s.taxPercent || 0}%):`, fmt(bill.taxAmount)) + '\n';
+    }
+  }
+
+  out += div('=') + '\n';
+  out += ESCPOS.BOLD_ON + ESCPOS.ALIGN_CENTER + ESCPOS.DOUBLE_SIZE;
+  out += 'TOTAL: ' + fmt(bill.total) + '\n';
+  out += ESCPOS.NORMAL_SIZE + ESCPOS.BOLD_OFF;
+
+  // Footer
+  out += ESCPOS.ALIGN_CENTER;
+  out += div() + '\n';
+  out += (s.footerMessage || 'Thank You! Visit Again') + '\n';
+  out += '\n';
+  out += ESCPOS.FEED_3;
+  out += ESCPOS.CUT;
+
+  return out;
+}
+
+// ─── QZ Tray helpers ──────────────────────────────────────────────────────────
+let _qz = null;
+let _qzConn = false;
+let _qzConnecting = false;
+
+async function loadQZ() {
+  if (typeof window === 'undefined') return null;
+  if (_qz) return _qz;
+  try {
+    const mod = await import('qz-tray');
+    _qz = mod.default || mod;
+    return _qz;
+  } catch (_) {}
+  // CDN fallback
+  return new Promise((resolve) => {
+    if (window.qz) {
+      _qz = window.qz;
+      return resolve(_qz);
+    }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js';
+    s.onload = () => {
+      _qz = window.qz;
+      resolve(_qz);
+    };
+    s.onerror = () => resolve(null);
+    document.head.appendChild(s);
+  });
+}
+
+async function connectQZ() {
+  if (_qzConn) return { ok: true };
+  if (_qzConnecting) {
+    await new Promise((r) => setTimeout(r, 2000));
+    return _qzConn ? { ok: true } : { ok: false, error: 'Timeout' };
+  }
+  _qzConnecting = true;
+  try {
+    const qz = await loadQZ();
+    if (!qz) throw new Error('QZ Tray library unavailable');
+    if (!qz.websocket.isActive()) await qz.websocket.connect({ retries: 2, delay: 1 });
+    _qzConn = true;
+    qz.websocket.setClosedCallbacks(() => {
+      _qzConn = false;
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  } finally {
+    _qzConnecting = false;
+  }
+}
+
+async function getQZPrinters() {
+  const conn = await connectQZ();
+  if (!conn.ok) return [];
+  try {
+    const qz = await loadQZ();
+    return (await qz.printers.find()) || [];
+  } catch {
+    return [];
+  }
+}
+
+async function qzPrintRaw(data, printerName) {
+  const conn = await connectQZ();
+  if (!conn.ok) return { ok: false, error: conn.error };
+  try {
+    const qz = await loadQZ();
+    const config = qz.configs.create(printerName, { encoding: 'Cp1252', copies: 1 });
+    await qz.print(config, [{ type: 'raw', format: 'plain', data }]);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// ─── Browser print fallback (styled HTML) ─────────────────────────────────────
+function browserPrintFallback(bill, settings = {}) {
+  const s = { ...settings, ...(bill.settings || {}) };
+  const cur = s.currency || 'INR';
+  const fmtN = (n) =>
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: cur,
+      minimumFractionDigits: 2,
+    }).format(parseFloat(n || 0));
+
+  const dateStr = new Date(bill.createdAt || Date.now()).toLocaleString('en-IN');
+
+  const itemRows = (bill.items || [])
+    .map(
+      (it) => `
+      <tr>
+        <td style="padding:3px 2px;border-bottom:1px dotted #ddd">${it.name}</td>
+        <td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:center">${it.quantity}</td>
+        <td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:right">${fmtN(it.price)}</td>
+        <td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:right">${fmtN(it.total)}</td>
+      </tr>`
+    )
+    .join('');
+
+  let taxRows = '';
+  if (s.taxType === 'GST_SPLIT' && parseFloat(bill.taxAmount) > 0) {
+    taxRows = `
+      <tr><td colspan="3" style="padding:2px">CGST (${s.cgst}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount / 2)}</td></tr>
+      <tr><td colspan="3" style="padding:2px">SGST (${s.sgst}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount / 2)}</td></tr>`;
+  } else if (parseFloat(bill.taxAmount) > 0) {
+    taxRows = `<tr><td colspan="3" style="padding:2px">Tax (${s.taxPercent || 0}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount)}</td></tr>`;
+  }
+
+  const html = `<!DOCTYPE html><html><head><title>${bill.billNumber}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:'Courier New',monospace;font-size:12px;max-width:302px;margin:0 auto;padding:6px 4px}
+      h2{text-align:center;font-size:15px;margin:4px 0}
+      .c{text-align:center}.m{text-align:center;font-size:11px;color:#555;margin:2px 0}
+      .d{border-top:1px dashed #aaa;margin:5px 0}.ds{border-top:2px solid #111;margin:5px 0}
+      table{width:100%;border-collapse:collapse}
+      th{font-size:10px;border-bottom:1px solid #aaa;padding:3px 2px;text-align:left}
+      .tr td{font-weight:bold;font-size:14px;border-top:2px solid #111;padding:5px 2px}
+      .foot{text-align:center;margin-top:8px;font-size:11px;color:#777;border-top:1px dashed #aaa;padding-top:6px}
+      @media print{body{max-width:100%}@page{margin:2mm;size:80mm auto}}
+    </style></head><body>
+    ${s.showStoreName !== false && s.storeName ? `<h2>${s.storeName}</h2>` : ''}
+    ${s.address ? `<p class="m">${s.address}</p>` : ''}
+    ${s.showGST && s.gstNumber ? `<p class="m">GST: ${s.gstNumber}</p>` : ''}
+    <div class="d"></div>
+    <p class="m"><strong>${bill.billNumber}</strong></p>
+    <p class="m">${dateStr}</p>
+    <p class="m">Payment: <strong>${bill.paymentMode}</strong></p>
+    ${bill.note ? `<p class="m">Note: ${bill.note}</p>` : ''}
+    <div class="d"></div>
+    <table>
+      <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead>
+      <tbody>${itemRows}</tbody>
+      <tfoot>
+        <tr><td colspan="3" style="padding:2px">Subtotal</td><td style="text-align:right;padding:2px">${fmtN(bill.subtotal)}</td></tr>
+        ${parseFloat(bill.discount) > 0 ? `<tr><td colspan="3" style="padding:2px;color:#c00">Discount</td><td style="text-align:right;padding:2px;color:#c00">-${fmtN(bill.discount)}</td></tr>` : ''}
+        ${taxRows}
+        <tr class="tr"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtN(bill.total)}</td></tr>
+      </tfoot>
+    </table>
+    ${s.footerMessage ? `<div class="foot">${s.footerMessage}</div>` : '<div class="foot">Thank You! Visit Again</div>'}
+    <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}<\/script>
+    </body></html>`;
+
+  const win = window.open('', '_blank', 'width=380,height=620');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
+}
+
+// ─── Main print dispatcher ────────────────────────────────────────────────────
+// Returns: { method: 'qz' | 'browser', ok: boolean, error?: string }
+async function printBillAuto(bill, settings, printerName) {
+  if (!printerName) {
+    browserPrintFallback(bill, settings);
+    return { method: 'browser', ok: true };
+  }
+  const escData = buildESCPOS(bill, settings);
+  const result = await qzPrintRaw(escData, printerName);
+  if (result.ok) return { method: 'qz', ok: true };
+  // QZ failed → fallback
+  console.warn('QZ print failed, browser fallback:', result.error);
+  browserPrintFallback(bill, settings);
+  return { method: 'browser', ok: true, error: result.error };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ── BARCODE INPUT COMPONENT ──────────────────────────────────────────────────
-// Always focused, captures USB scanner Enter → calls onScan(barcode)
 // ─────────────────────────────────────────────────────────────────────────────
 function BarcodeInput({ onScan, disabled = false }) {
   const inputRef = useRef(null);
   const [value, setValue] = useState('');
-  const focusLockRef = useRef(null);
+  const lockRef = useRef(null);
 
-  // Persistent focus lock — re-focuses every 500ms and on any click outside
   useEffect(() => {
     if (disabled) return;
-
-    const focusInput = () => {
-      if (document.activeElement !== inputRef.current) {
-        inputRef.current?.focus();
-      }
+    const focus = () => {
+      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
     };
-
-    focusInput();
-    // Poll to recapture focus (e.g. after modal closes)
-    focusLockRef.current = setInterval(focusInput, 500);
-
-    // Recapture on any document click that isn't an interactive element
-    const handleDocClick = (e) => {
+    focus();
+    lockRef.current = setInterval(focus, 500);
+    const onClick = (e) => {
       const tag = e.target.tagName.toLowerCase();
       const interactive = ['input', 'textarea', 'button', 'select', 'a'];
-      if (!interactive.includes(tag) && !e.target.closest('[role="dialog"]')) {
+      if (!interactive.includes(tag) && !e.target.closest('[role="dialog"]'))
         setTimeout(() => inputRef.current?.focus(), 0);
-      }
     };
-    document.addEventListener('click', handleDocClick);
-
+    document.addEventListener('click', onClick);
     return () => {
-      clearInterval(focusLockRef.current);
-      document.removeEventListener('click', handleDocClick);
+      clearInterval(lockRef.current);
+      document.removeEventListener('click', onClick);
     };
   }, [disabled]);
 
@@ -268,8 +578,7 @@ function BarcodeInput({ onScan, disabled = false }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ── useBarcodeScanner HOOK ────────────────────────────────────────────────────
-// Handles full scan logic: lookup → add / duplicate / unknown
+// ── useBarcodeScanner hook ───────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
 function useBarcodeScanner({
   localProducts,
@@ -280,35 +589,22 @@ function useBarcodeScanner({
 }) {
   const handleScan = useCallback(
     (barcode) => {
-      // 1. Look up in local cache — instant, offline-safe
       const product = findProductByBarcode(localProducts, barcode);
-
       if (!product) {
-        // Unknown barcode → open create product modal
         setCreateProductModal({ barcode });
         return;
       }
-
-      // 2. Check if already in cart
       const existingIdx = cartItems.findIndex((i) => i.productId === product.id);
-
-      if (existingIdx >= 0) {
-        // Duplicate → show confirmation (increase qty or new row)
-        setDuplicateModal({ product, existingIdx });
-      } else {
-        // New product → add to cart immediately
-        addToCart(product);
-      }
+      if (existingIdx >= 0) setDuplicateModal({ product, existingIdx });
+      else addToCart(product);
     },
     [localProducts, cartItems, addToCart, setDuplicateModal, setCreateProductModal]
   );
-
   return { handleScan };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ── CREATE PRODUCT MODAL ──────────────────────────────────────────────────────
-// Opens when an unknown barcode is scanned; creates product via API
 // ─────────────────────────────────────────────────────────────────────────────
 function CreateProductModal({ barcode, onClose, onCreated, settings }) {
   const [form, setForm] = useState({
@@ -326,8 +622,6 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
   useEffect(() => {
     setTimeout(() => nameRef.current?.focus(), 100);
   }, []);
-
-  const fmt = (n) => formatCurrency(n, settings);
 
   const handleSubmit = async () => {
     if (!form.name.trim() || !form.price) {
@@ -381,7 +675,6 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
       aria-modal="true"
     >
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onKeyDown={handleKey}>
-        {/* Header */}
         <div className="flex items-center gap-3 mb-5">
           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
             <PackagePlus size={20} className="text-blue-600" />
@@ -397,15 +690,12 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
             <X size={16} />
           </button>
         </div>
-
         {error && (
           <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
             {error}
           </div>
         )}
-
         <div className="space-y-3">
-          {/* Name */}
           <div>
             <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
               Product Name *
@@ -419,8 +709,6 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
               className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
             />
           </div>
-
-          {/* Price + MRP */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -451,8 +739,6 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
               />
             </div>
           </div>
-
-          {/* SKU + Stock */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -479,8 +765,6 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
               />
             </div>
           </div>
-
-          {/* Barcode (pre-filled, editable) */}
           <div>
             <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
               Barcode
@@ -493,7 +777,6 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
             />
           </div>
         </div>
-
         <div className="flex gap-2 mt-5">
           <button
             onClick={handleSubmit}
@@ -519,7 +802,6 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
             Cancel
           </button>
         </div>
-
         <p className="text-center text-[10px] text-slate-400 mt-3">
           Press Enter to save · Esc to cancel
         </p>
@@ -529,7 +811,185 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main component
+// ══ PRINT SETTINGS MODAL (NEW) ═══════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
+function PrintSettingsModal({
+  onClose,
+  printerName,
+  onPrinterChange,
+  qzStatus,
+  settings,
+  onTestPrint,
+}) {
+  const [printers, setPrinters] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(printerName || '');
+  const [testMsg, setTestMsg] = useState('');
+
+  useEffect(() => {
+    fetchPrinters();
+  }, []);
+
+  const fetchPrinters = async () => {
+    setLoading(true);
+    try {
+      const list = await getQZPrinters();
+      setPrinters(list);
+    } catch (_) {
+      setPrinters([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = () => {
+    onPrinterChange(selected);
+    onClose();
+  };
+
+  
+  const qzColors = {
+    connected: 'bg-green-100 text-green-700 border-green-300',
+    connecting: 'bg-yellow-100 text-yellow-700 border-yellow-300',
+    disconnected: 'bg-red-100 text-red-700 border-red-300',
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        {/* Header */}
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+            <Printer size={20} className="text-slate-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800">Print Settings</h3>
+            <p className="text-xs text-slate-400">Thermal printer via QZ Tray</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* QZ Status */}
+        <div
+          className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium mb-4 ${qzColors[qzStatus] || qzColors.disconnected}`}
+        >
+          {qzStatus === 'connected' ? (
+            <>
+              <PlugZap size={15} /> QZ Tray connected — direct print ready
+            </>
+          ) : qzStatus === 'connecting' ? (
+            <>
+              <div className="w-3.5 h-3.5 border-2 border-current/40 border-t-current rounded-full animate-spin" />{' '}
+              Connecting to QZ Tray…
+            </>
+          ) : (
+            <>
+              <Plug size={15} /> QZ Tray not running — will use browser print
+            </>
+          )}
+        </div>
+
+       
+
+        {/* Printer selector */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+              Select Printer
+            </label>
+            <button
+              onClick={fetchPrinters}
+              disabled={loading}
+              className="text-[10px] text-blue-600 hover:underline flex items-center gap-1"
+            >
+              <RefreshCw size={10} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
+          </div>
+          {loading ? (
+            <div className="text-sm text-slate-400 py-3 text-center">Loading printers…</div>
+          ) : printers.length > 0 ? (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {/* Manual entry option */}
+              <button
+                onClick={() => setSelected('')}
+                className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm text-left transition-all ${!selected ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}
+              >
+                {!selected ? (
+                  <CheckSquare size={15} />
+                ) : (
+                  <Square size={15} className="text-slate-300" />
+                )}
+                <span className="italic text-slate-400">None (use browser print)</span>
+              </button>
+              {printers.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setSelected(p)}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm text-left transition-all ${selected === p ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-700'}`}
+                >
+                  {selected === p ? (
+                    <CheckSquare size={15} />
+                  ) : (
+                    <Square size={15} className="text-slate-300" />
+                  )}
+                  <Printer size={13} className="flex-shrink-0 text-slate-400" />
+                  <span className="truncate">{p}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-slate-400 text-center py-2">
+                {qzStatus !== 'connected' ? 'Connect QZ Tray to see printers' : 'No printers found'}
+              </p>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-1">
+                  Or enter printer name manually:
+                </label>
+                <input
+                  type="text"
+                  value={selected}
+                  onChange={(e) => setSelected(e.target.value)}
+                  placeholder="e.g. TVS MSP 250 STAR"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 font-mono"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleSave}
+            className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold text-sm"
+          >
+            Save Settings
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-3 text-slate-500 hover:bg-slate-100 rounded-xl text-sm"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ══ MAIN COMPONENT ═══════════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────────────────
 export default function EmployeeBillingPage() {
   // ── Auth/settings ──────────────────────────────────────────────
@@ -560,10 +1020,16 @@ export default function EmployeeBillingPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
 
-  // ── Barcode state (NEW) ────────────────────────────────────────
-  const [createProductModal, setCreateProductModal] = useState(null); // { barcode }
-  const [lastScanFeedback, setLastScanFeedback] = useState(null); // { type, message }
-  const [scanMode, setScanMode] = useState(true); // toggle barcode vs text search
+  // ── Barcode state ──────────────────────────────────────────────
+  const [createProductModal, setCreateProductModal] = useState(null);
+  const [lastScanFeedback, setLastScanFeedback] = useState(null);
+  const [scanMode, setScanMode] = useState(true);
+
+  // ── Print state (NEW) ─────────────────────────────────────────
+  const [printerName, setPrinterName] = useState('');
+  const [qzStatus, setQzStatus] = useState('disconnected'); // 'connected'|'connecting'|'disconnected'
+  const [showPrintSettings, setShowPrintSettings] = useState(false);
+  const [lastPrintMethod, setLastPrintMethod] = useState(null); // 'qz' | 'browser'
 
   // ── History state ──────────────────────────────────────────────
   const [historyBills, setHistoryBills] = useState([]);
@@ -596,7 +1062,7 @@ export default function EmployeeBillingPage() {
   const fmt = (n) => formatCurrency(n, settings);
 
   // ─────────────────────────────────────────────────────────────
-  // Scan feedback helper
+  // Scan feedback
   // ─────────────────────────────────────────────────────────────
   const showScanFeedback = useCallback((type, message) => {
     clearTimeout(feedbackTimer.current);
@@ -608,6 +1074,7 @@ export default function EmployeeBillingPage() {
   // Init
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
+    // Auth
     const empRaw = localStorage.getItem('empData') || localStorage.getItem('employeeData');
     if (empRaw) {
       try {
@@ -622,6 +1089,7 @@ export default function EmployeeBillingPage() {
       setHasPermission(false);
     }
 
+    // Settings
     const token = getEmpToken();
     if (token) {
       fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } })
@@ -630,6 +1098,7 @@ export default function EmployeeBillingPage() {
         .catch(console.error);
     }
 
+    // Network
     const onOnline = () => {
       setIsOnline(true);
       triggerSync();
@@ -640,22 +1109,26 @@ export default function EmployeeBillingPage() {
     window.addEventListener('offline', onOffline);
     setIsOnline(navigator.onLine);
 
+    // Queue + local bills
     refreshQueueCount();
+    idbGetAll(STORE_LOCAL).then((bills) =>
+      setLocalBills(bills.sort((a, b) => b.createdAt - a.createdAt))
+    );
+    idbGetAll(STORE_QUEUE).then((q) => setQueueBillIds(new Set(q.map((b) => b.localId))));
 
-    idbGetAll(STORE_LOCAL).then((bills) => {
-      setLocalBills(bills.sort((a, b) => b.createdAt - a.createdAt));
-    });
-
-    idbGetAll(STORE_QUEUE).then((q) => {
-      setQueueBillIds(new Set(q.map((b) => b.localId)));
-    });
-
+    // Fullscreen
     const onFS = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFS);
 
+    // Product cache
     const cached = getProductsFromCache();
     if (cached) setLocalProducts(cached);
     if (navigator.onLine) refreshProductCache();
+
+    // ── QZ Tray init (NEW) ──────────────────────────────────────
+    const savedPrinter = localStorage.getItem(LS_PRINTER_NAME) || '';
+    setPrinterName(savedPrinter);
+    initQZConnection();
 
     return () => {
       window.removeEventListener('online', onOnline);
@@ -666,27 +1139,39 @@ export default function EmployeeBillingPage() {
     };
   }, []); // eslint-disable-line
 
-  // ESC closes suggestions / modals
+  // ── QZ connection init ────────────────────────────────────────
+  const initQZConnection = async () => {
+    setQzStatus('connecting');
+    const result = await connectQZ();
+    setQzStatus(result.ok ? 'connected' : 'disconnected');
+  };
+
+  // Save printer name to localStorage when changed
+  const handlePrinterChange = (name) => {
+    setPrinterName(name);
+    try {
+      localStorage.setItem(LS_PRINTER_NAME, name);
+    } catch (_) {}
+  };
+
+  // ESC handler
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
         setSuggestions([]);
         setShowSuggestions(false);
-        if (createProductModal) {
-          setCreateProductModal(null);
-        }
+        if (createProductModal) setCreateProductModal(null);
+        if (showPrintSettings) setShowPrintSettings(false);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [createProductModal]);
+  }, [createProductModal, showPrintSettings]);
 
-  // Auto-focus when permission confirmed
   useEffect(() => {
     if (hasPermission) setTimeout(() => searchRef.current?.focus(), 100);
   }, [hasPermission]);
 
-  // Load history on tab switch or filter change
   useEffect(() => {
     if (activeTab === 'history') loadHistory(1);
   }, [activeTab, historyPM, historyDateFrom, historyDateTo]); // eslint-disable-line
@@ -717,7 +1202,7 @@ export default function EmployeeBillingPage() {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // History loader
+  // History
   // ─────────────────────────────────────────────────────────────
   const loadHistory = async (page = 1) => {
     setHistoryLoading(true);
@@ -750,7 +1235,7 @@ export default function EmployeeBillingPage() {
   // Search (text mode)
   // ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (scanMode) return; // Skip API search when in scan mode
+    if (scanMode) return;
     clearTimeout(searchTimer.current);
     const q = searchQuery.trim();
     if (!q) {
@@ -758,7 +1243,6 @@ export default function EmployeeBillingPage() {
       setShowSuggestions(false);
       return;
     }
-
     if (!isOnline) {
       const results = searchLocal(localProducts, q);
       setSuggestions(results);
@@ -766,13 +1250,11 @@ export default function EmployeeBillingPage() {
       setActiveSuggIdx(-1);
       return;
     }
-
     if (apiCache.current[q]) {
       setSuggestions(apiCache.current[q]);
       setShowSuggestions(apiCache.current[q].length > 0);
       setActiveSuggIdx(-1);
     }
-
     searchTimer.current = setTimeout(async () => {
       setSearchLoading(true);
       try {
@@ -794,7 +1276,6 @@ export default function EmployeeBillingPage() {
         setSearchLoading(false);
       }
     }, 150);
-
     return () => clearTimeout(searchTimer.current);
   }, [searchQuery, isOnline, scanMode]); // eslint-disable-line
 
@@ -808,7 +1289,7 @@ export default function EmployeeBillingPage() {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // Keyboard nav (text search mode)
+  // Keyboard nav
   // ─────────────────────────────────────────────────────────────
   const handleSearchKeyDown = (e) => {
     if (e.key === 'ArrowDown') {
@@ -861,7 +1342,6 @@ export default function EmployeeBillingPage() {
     [cartItems, scanMode, showScanFeedback]
   );
 
-  // ── Barcode scan handler (via useBarcodeScanner hook) ─────────
   const { handleScan } = useBarcodeScanner({
     localProducts,
     cartItems,
@@ -870,13 +1350,10 @@ export default function EmployeeBillingPage() {
     setCreateProductModal,
   });
 
-  // Wrap handleScan to add feedback
   const handleBarcodeScanned = useCallback(
     (barcode) => {
       const product = findProductByBarcode(localProducts, barcode);
-      if (!product) {
-        showScanFeedback('error', `Unknown: ${barcode}`);
-      }
+      if (!product) showScanFeedback('error', `Unknown: ${barcode}`);
       handleScan(barcode);
     },
     [localProducts, handleScan, showScanFeedback]
@@ -887,7 +1364,6 @@ export default function EmployeeBillingPage() {
     updateQuantity(duplicateModal.existingIdx, cartItems[duplicateModal.existingIdx].quantity + 1);
     showScanFeedback('success', `+1 qty: ${duplicateModal.product.name}`);
     setDuplicateModal(null);
-    // Don't call searchRef.focus() — BarcodeInput keeps its own focus
   };
 
   const handleDuplicateNewRow = () => {
@@ -912,19 +1388,15 @@ export default function EmployeeBillingPage() {
     setDuplicateModal(null);
   };
 
-  // Called after product created from modal → add to cart + refresh cache
   const handleProductCreated = useCallback(
     (product) => {
       setCreateProductModal(null);
-      // Optimistically add to local cache
       setLocalProducts((prev) => {
-        const updated = [...prev, product];
-        saveProductsToCache(updated);
-        return updated;
+        const u = [...prev, product];
+        saveProductsToCache(u);
+        return u;
       });
-      // Also invalidate API cache
       apiCache.current = {};
-      // Add to cart
       setCartItems((prev) => [
         ...prev,
         {
@@ -940,7 +1412,6 @@ export default function EmployeeBillingPage() {
         },
       ]);
       showScanFeedback('success', `Created & added: ${product.name}`);
-      // Background refresh to get full product data
       setTimeout(refreshProductCache, 1000);
     },
     [showScanFeedback]
@@ -1024,7 +1495,6 @@ export default function EmployeeBillingPage() {
     try {
       await idbPut(STORE_LOCAL, billData);
       await idbPut(STORE_QUEUE, billData);
-
       setLocalBills((prev) => [billData, ...prev].slice(0, 200));
       setQueueBillIds((prev) => new Set([...prev, localId]));
 
@@ -1048,12 +1518,17 @@ export default function EmployeeBillingPage() {
 
       setSuccessBill(billData);
       await refreshQueueCount();
-      setCartItems([]);
-      setBillDiscount(0);
-      setNote('');
-      setPaymentMode('CASH');
+      clearCart();
       triggerSync();
-      setTimeout(() => printBill(billData), 400);
+
+      // ── PRINT (QZ Tray → browser fallback) ─────────────────
+      setTimeout(async () => {
+        const result = await printBillAuto(billData, settings, printerName);
+        setLastPrintMethod(result.method);
+        if (!result.ok) {
+          console.warn('Print failed:', result.error);
+        }
+      }, 400);
 
       if (activeTab === 'history') loadHistory(1);
     } catch (err) {
@@ -1088,23 +1563,19 @@ export default function EmployeeBillingPage() {
         body: JSON.stringify(queue),
       });
       if (!res.ok) throw new Error('sync failed');
-      const { saved = [], failed = [] } = await res.json();
-
+      const { saved = [] } = await res.json();
       for (const { localId } of saved) {
         await idbDelete(STORE_QUEUE, localId);
         const allLocal = await idbGetAll(STORE_LOCAL);
         const bill = allLocal.find((b) => b.localId === localId);
         if (bill) await idbPut(STORE_LOCAL, { ...bill, synced: true });
       }
-
       const remaining = await idbGetAll(STORE_QUEUE);
       setQueueBillIds(new Set(remaining.map((b) => b.localId)));
       idbGetAll(STORE_LOCAL).then((bills) =>
         setLocalBills(bills.sort((a, b) => b.createdAt - a.createdAt))
       );
-
       await refreshQueueCount();
-      if (failed.length) syncTimerRef.current = setTimeout(runSync, 30000);
       if (activeTab === 'history') loadHistory(historyPage);
     } catch {
       syncTimerRef.current = setTimeout(runSync, 30000);
@@ -1119,83 +1590,7 @@ export default function EmployeeBillingPage() {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // Print
-  // ─────────────────────────────────────────────────────────────
-  const printBill = (bill) => {
-    const s = bill.settings || {};
-    const currency = s.currency || 'INR';
-    const fmtN = (n) =>
-      new Intl.NumberFormat('en-IN', {
-        style: 'currency',
-        currency,
-        minimumFractionDigits: 2,
-      }).format(n);
-    const dateStr = new Date(bill.createdAt).toLocaleString('en-IN');
-
-    const itemRows = bill.items
-      .map(
-        (it) => `
-      <tr>
-        <td style="padding:3px 6px;border-bottom:1px solid #eee">${it.name}</td>
-        <td style="padding:3px 6px;border-bottom:1px solid #eee;text-align:center">${it.quantity}</td>
-        <td style="padding:3px 6px;border-bottom:1px solid #eee;text-align:right">${fmtN(it.price)}</td>
-        <td style="padding:3px 6px;border-bottom:1px solid #eee;text-align:right">${fmtN(it.total)}</td>
-      </tr>`
-      )
-      .join('');
-
-    let taxRows = '';
-    if (s.taxType === 'GST_SPLIT') {
-      taxRows = `<tr><td colspan="3" style="padding:2px 6px">CGST (${s.cgst}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount / 2)}</td></tr>
-                 <tr><td colspan="3" style="padding:2px 6px">SGST (${s.sgst}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount / 2)}</td></tr>`;
-    } else if (bill.taxAmount > 0) {
-      taxRows = `<tr><td colspan="3" style="padding:2px 6px">Tax (${s.taxPercent}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount)}</td></tr>`;
-    }
-
-    const html = `<html><head><title>${bill.billNumber}</title>
-      <style>
-        body{font-family:monospace;font-size:13px;max-width:320px;margin:0 auto;}
-        h2{text-align:center;margin:4px 0;font-size:16px;}
-        p{text-align:center;margin:2px 0;font-size:11px;color:#555;}
-        table{width:100%;border-collapse:collapse;}
-        th{background:#f5f5f5;padding:4px 6px;text-align:left;border-bottom:2px solid #ccc;}
-        .total-row td{font-weight:bold;font-size:14px;border-top:2px solid #ccc;padding:4px 6px;}
-        .footer{text-align:center;margin-top:12px;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:6px;}
-        @media print{body{max-width:100%;}}
-      </style></head><body>
-      ${s.showStoreName && s.storeName ? `<h2>${s.storeName}</h2>` : ''}
-      ${s.address ? `<p>${s.address}</p>` : ''}
-      ${s.showGST && s.gstNumber ? `<p>GST: ${s.gstNumber}</p>` : ''}
-      <p>─────────────────────</p>
-      <p><strong>${bill.billNumber}</strong></p>
-      <p>${dateStr}</p>
-      <p>Payment: ${bill.paymentMode}</p>
-      <p>─────────────────────</p>
-      <table>
-        <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead>
-        <tbody>${itemRows}</tbody>
-        <tfoot>
-          <tr><td colspan="3" style="padding:2px 6px">Subtotal</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.subtotal)}</td></tr>
-          ${bill.discount > 0 ? `<tr><td colspan="3" style="padding:2px 6px">Discount</td><td style="text-align:right;padding:2px 6px">-${fmtN(bill.discount)}</td></tr>` : ''}
-          ${taxRows}
-          <tr class="total-row"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtN(bill.total)}</td></tr>
-        </tfoot>
-      </table>
-      ${s.footerMessage ? `<div class="footer">${s.footerMessage}</div>` : ''}
-      </body></html>`;
-
-    const win = window.open('', '_blank', 'width=400,height=600');
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-    }, 300);
-  };
-
-  // ─────────────────────────────────────────────────────────────
-  // Merge DB + local bills
+  // Merged history
   // ─────────────────────────────────────────────────────────────
   const mergedHistoryBills = () => {
     const dbSet = new Set(historyBills.map((b) => b.billNumber));
@@ -1214,6 +1609,29 @@ export default function EmployeeBillingPage() {
     settings?.taxType === 'GST_SPLIT'
       ? `GST (CGST ${settings.cgst}% + SGST ${settings.sgst}%)`
       : `Tax (${settings?.taxPercent || 0}%)`;
+
+  // ─── QZ status indicator config ──────────────────────────────
+  const qzIndicator = {
+    connected: {
+      cls: 'bg-green-50 text-green-700 border-green-200',
+      dot: 'bg-green-500',
+      label: 'QZ Ready',
+    },
+    connecting: {
+      cls: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      dot: 'bg-yellow-400 animate-pulse',
+      label: 'QZ Connecting…',
+    },
+    disconnected: {
+      cls: 'bg-slate-50 text-slate-500 border-slate-200',
+      dot: 'bg-slate-300',
+      label: 'Browser Print',
+    },
+  }[qzStatus] || {
+    cls: 'bg-slate-50 text-slate-500 border-slate-200',
+    dot: 'bg-slate-300',
+    label: 'Browser Print',
+  };
 
   // ─────────────────────────────────────────────────────────────
   // Permission gate
@@ -1264,21 +1682,13 @@ export default function EmployeeBillingPage() {
           <div className="flex items-center bg-slate-100 rounded-lg p-0.5 ml-2">
             <button
               onClick={() => setActiveTab('billing')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                activeTab === 'billing'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'billing' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <ShoppingCart size={12} /> New Bill
             </button>
             <button
               onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                activeTab === 'history'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === 'history' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <History size={12} /> History
               {localBills.length > 0 && (
@@ -1296,26 +1706,43 @@ export default function EmployeeBillingPage() {
               ⚡ Offline — {localProducts.length} cached
             </span>
           )}
+
+          {/* ── QZ STATUS + PRINT SETTINGS BUTTON (NEW) ── */}
+          <button
+            onClick={() => setShowPrintSettings(true)}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-medium border transition-all ${qzIndicator.cls}`}
+            title="Print settings"
+          >
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${qzIndicator.dot}`} />
+            {qzIndicator.label}
+            <Settings size={11} />
+          </button>
+
+          {printerName && (
+            <span
+              className="hidden md:flex items-center gap-1 text-[10px] text-slate-400 border border-slate-200 px-2 py-1.5 rounded-lg bg-slate-50 max-w-[120px] truncate"
+              title={printerName}
+            >
+              <Printer size={10} /> {printerName}
+            </span>
+          )}
+
           <button
             onClick={runSync}
             disabled={syncing || queueCount === 0}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-medium transition-all ${
-              queueCount > 0
-                ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
-                : 'bg-slate-50 text-slate-400 border border-slate-200'
-            }`}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-medium transition-all ${queueCount > 0 ? 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200' : 'bg-slate-50 text-slate-400 border border-slate-200'}`}
           >
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
             {queueCount > 0 ? `${queueCount} unsynced` : 'Synced'}
           </button>
+
           <div
-            className={`flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg ${
-              isOnline ? 'text-green-600 bg-green-50' : 'text-red-500 bg-red-50'
-            }`}
+            className={`flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg ${isOnline ? 'text-green-600 bg-green-50' : 'text-red-500 bg-red-50'}`}
           >
             {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
             {isOnline ? 'Online' : 'Offline'}
           </div>
+
           <button
             onClick={toggleFullscreen}
             className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors"
@@ -1330,18 +1757,13 @@ export default function EmployeeBillingPage() {
         <div className="flex flex-1 overflow-hidden">
           {/* LEFT */}
           <div className="flex flex-col w-full lg:w-[58%] xl:w-[62%] border-r border-slate-200 bg-white overflow-hidden">
-            {/* ── INPUT AREA: Barcode scanner + text search toggle ── */}
+            {/* Input area */}
             <div className="p-4 border-b border-slate-100 space-y-2">
-              {/* Mode Toggle */}
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
                   <button
                     onClick={() => setScanMode(true)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                      scanMode
-                        ? 'bg-white text-blue-700 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${scanMode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >
                     <ScanLine size={12} /> Scanner
                   </button>
@@ -1350,24 +1772,15 @@ export default function EmployeeBillingPage() {
                       setScanMode(false);
                       setTimeout(() => searchRef.current?.focus(), 50);
                     }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                      !scanMode
-                        ? 'bg-white text-slate-800 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${!scanMode ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                   >
                     <Search size={12} /> Search
                   </button>
                 </div>
 
-                {/* Scan feedback badge */}
                 {lastScanFeedback && (
                   <span
-                    className={`text-xs font-medium px-3 py-1 rounded-full transition-all ${
-                      lastScanFeedback.type === 'success'
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-red-100 text-red-700'
-                    }`}
+                    className={`text-xs font-medium px-3 py-1 rounded-full transition-all ${lastScanFeedback.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
                   >
                     {lastScanFeedback.message}
                   </span>
@@ -1378,15 +1791,18 @@ export default function EmployeeBillingPage() {
                 </div>
               </div>
 
-              {/* Barcode Input (Scanner mode) */}
               {scanMode && (
                 <BarcodeInput
                   onScan={handleBarcodeScanned}
-                  disabled={!!duplicateModal || !!createProductModal || activeTab !== 'billing'}
+                  disabled={
+                    !!duplicateModal ||
+                    !!createProductModal ||
+                    !!showPrintSettings ||
+                    activeTab !== 'billing'
+                  }
                 />
               )}
 
-              {/* Text Search (Search mode) */}
               {!scanMode && (
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
@@ -1418,16 +1834,13 @@ export default function EmployeeBillingPage() {
                     <span className="text-[10px] font-mono">TYPE</span>
                   </div>
 
-                  {/* ✅ Suggestions — NOW inside relative div, positions correctly */}
                   {showSuggestions && suggestions.length > 0 && (
                     <div className="absolute left-0 right-0 top-full z-40 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden mt-1">
                       {suggestions.map((p, i) => (
                         <button
                           key={p.id}
                           onMouseDown={() => addToCart(p)}
-                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-blue-50 ${
-                            i === activeSuggIdx ? 'bg-blue-50' : ''
-                          } ${i !== 0 ? 'border-t border-slate-100' : ''}`}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-blue-50 ${i === activeSuggIdx ? 'bg-blue-50' : ''} ${i !== 0 ? 'border-t border-slate-100' : ''}`}
                         >
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
@@ -1444,13 +1857,7 @@ export default function EmployeeBillingPage() {
                                 </span>
                               )}
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                                  p.quantity > 10
-                                    ? 'bg-green-100 text-green-700'
-                                    : p.quantity > 0
-                                      ? 'bg-amber-100 text-amber-700'
-                                      : 'bg-red-100 text-red-700'
-                                }`}
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${p.quantity > 10 ? 'bg-green-100 text-green-700' : p.quantity > 0 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}
                               >
                                 {p.quantity > 0 ? `${p.quantity} in stock` : 'Out of stock'}
                               </span>
@@ -1468,55 +1875,6 @@ export default function EmployeeBillingPage() {
                       ))}
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* Search suggestions (text mode only) */}
-              {!scanMode && showSuggestions && suggestions.length > 0 && (
-                <div className="absolute left-0 right-0 top-full z-40 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden mt-1">
-                  {suggestions.map((p, i) => (
-                    <button
-                      key={p.id}
-                      onMouseDown={() => addToCart(p)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-blue-50 ${
-                        i === activeSuggIdx ? 'bg-blue-50' : ''
-                      } ${i !== 0 ? 'border-t border-slate-100' : ''}`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {p.sku && (
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              SKU: {p.sku}
-                            </span>
-                          )}
-                          {p.barcode && (
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              <Barcode size={9} className="inline" />
-                              {p.barcode}
-                            </span>
-                          )}
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              p.quantity > 10
-                                ? 'bg-green-100 text-green-700'
-                                : p.quantity > 0
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-red-100 text-red-700'
-                            }`}
-                          >
-                            {p.quantity > 0 ? `${p.quantity} in stock` : 'Out of stock'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-sm font-bold text-slate-800">{fmt(p.price)}</p>
-                        {p.mrp > p.price && (
-                          <p className="text-[10px] text-slate-400 line-through">{fmt(p.mrp)}</p>
-                        )}
-                      </div>
-                    </button>
-                  ))}
                 </div>
               )}
             </div>
@@ -1714,11 +2072,7 @@ export default function EmployeeBillingPage() {
                     <button
                       key={pm.id}
                       onClick={() => setPaymentMode(pm.id)}
-                      className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border-2 transition-all text-xs font-medium ${
-                        paymentMode === pm.id
-                          ? 'border-blue-400 bg-blue-50 text-blue-700'
-                          : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
-                      }`}
+                      className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border-2 transition-all text-xs font-medium ${paymentMode === pm.id ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'}`}
                     >
                       <pm.icon size={18} />
                       {pm.label}
@@ -1740,6 +2094,28 @@ export default function EmployeeBillingPage() {
                   className="w-full text-sm border border-slate-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-blue-300 bg-slate-50 resize-none placeholder:text-slate-400"
                 />
               </div>
+
+              {/* Print method indicator (NEW) */}
+              <div
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border ${qzStatus === 'connected' && printerName ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
+              >
+                <Printer size={13} />
+                {qzStatus === 'connected' && printerName ? (
+                  <>
+                    <span className="font-medium">Direct print:</span> {printerName}
+                  </>
+                ) : (
+                  <>
+                    <span>Will use browser print dialog</span>
+                    <button
+                      onClick={() => setShowPrintSettings(true)}
+                      className="ml-auto underline hover:text-blue-600"
+                    >
+                      Set printer
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
             {/* Complete button */}
@@ -1747,11 +2123,7 @@ export default function EmployeeBillingPage() {
               <button
                 onClick={completeBill}
                 disabled={!cartItems.length || loading}
-                className={`w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 transition-all shadow-lg ${
-                  cartItems.length && !loading
-                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-xl active:scale-[0.98]'
-                    : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                }`}
+                className={`w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 transition-all shadow-lg ${cartItems.length && !loading ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 hover:shadow-xl active:scale-[0.98]' : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}
               >
                 {loading ? (
                   <>
@@ -1765,9 +2137,11 @@ export default function EmployeeBillingPage() {
                 )}
               </button>
               <p className="text-center text-xs text-slate-400 mt-2">
-                {isOnline
-                  ? 'Saves & syncs instantly · Prints automatically'
-                  : '⚡ Saves offline · Syncs when online'}
+                {qzStatus === 'connected' && printerName
+                  ? '⚡ Prints directly to thermal printer'
+                  : isOnline
+                    ? 'Saves & syncs instantly · Opens print dialog'
+                    : '⚡ Saves offline · Syncs when online'}
               </p>
             </div>
           </div>
@@ -1816,11 +2190,7 @@ export default function EmployeeBillingPage() {
                 </button>
                 <button
                   onClick={() => setShowFilters((v) => !v)}
-                  className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
-                    showFilters
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : 'text-slate-500 border-slate-200 hover:bg-slate-100'
-                  }`}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${showFilters ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-slate-500 border-slate-200 hover:bg-slate-100'}`}
                 >
                   <Filter size={12} /> Filters
                   <ChevronDown
@@ -1903,7 +2273,6 @@ export default function EmployeeBillingPage() {
             )}
           </div>
 
-          {/* Bills list */}
           <div className="flex-1 overflow-y-auto p-5">
             {historyLoading && historyBills.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 gap-3">
@@ -1918,21 +2287,14 @@ export default function EmployeeBillingPage() {
                     const isExpanded = expandedBill === (bill.id || bill.localId);
                     const createdAt =
                       bill.createdAt instanceof Date ? bill.createdAt : new Date(bill.createdAt);
-
                     return (
                       <div
                         key={bill.id || bill.localId}
-                        className={`bg-white rounded-xl border transition-all ${
-                          isExpanded
-                            ? 'border-blue-200 shadow-md'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
+                        className={`bg-white rounded-xl border transition-all ${isExpanded ? 'border-blue-200 shadow-md' : 'border-slate-200 hover:border-slate-300'}`}
                       >
                         <div className="flex items-center gap-3 p-3.5">
                           <div
-                            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                              isSynced ? 'bg-green-400' : 'bg-orange-400 animate-pulse'
-                            }`}
+                            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isSynced ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`}
                             title={isSynced ? 'Synced' : 'Pending sync'}
                           />
                           <div className="flex-1 min-w-0">
@@ -1966,7 +2328,7 @@ export default function EmployeeBillingPage() {
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <p className="font-bold text-slate-800 text-sm">{fmt(bill.total)}</p>
                             <button
-                              onClick={() => printBill(bill)}
+                              onClick={() => printBillAuto(bill, settings, printerName)}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                               title="Print"
                             >
@@ -2108,13 +2470,20 @@ export default function EmployeeBillingPage() {
         </div>
       )}
 
-      {/* ── SUCCESS TOAST ───────────────────────────────────────── */}
+      {/* ── SUCCESS TOAST ─────────────────────────────────────── */}
       {successBill && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-medium">
           <CheckCircle size={18} />
-          <span>Bill {successBill.billNumber} saved!</span>
+          <div className="flex flex-col">
+            <span>Bill {successBill.billNumber} saved!</span>
+            {lastPrintMethod && (
+              <span className="text-[10px] text-green-200 mt-0.5">
+                {lastPrintMethod === 'qz' ? '🖨 Printed via QZ Tray' : '🌐 Opened browser print'}
+              </span>
+            )}
+          </div>
           <button
-            onClick={() => printBill(successBill)}
+            onClick={() => printBillAuto(successBill, settings, printerName)}
             className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-xs"
           >
             <Printer size={12} /> Reprint
@@ -2125,7 +2494,7 @@ export default function EmployeeBillingPage() {
         </div>
       )}
 
-      {/* ── DUPLICATE MODAL ─────────────────────────────────────── */}
+      {/* ── DUPLICATE MODAL ───────────────────────────────────── */}
       {duplicateModal && (
         <div
           className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
@@ -2161,9 +2530,7 @@ export default function EmployeeBillingPage() {
                 Add as new line
               </button>
               <button
-                onClick={() => {
-                  setDuplicateModal(null);
-                }}
+                onClick={() => setDuplicateModal(null)}
                 className="w-full py-2.5 text-slate-400 hover:text-slate-600 text-sm"
               >
                 Cancel
@@ -2173,13 +2540,25 @@ export default function EmployeeBillingPage() {
         </div>
       )}
 
-      {/* ── CREATE PRODUCT MODAL (unknown barcode) ──────────────── */}
+      {/* ── CREATE PRODUCT MODAL ──────────────────────────────── */}
       {createProductModal && (
         <CreateProductModal
           barcode={createProductModal.barcode}
           onClose={() => setCreateProductModal(null)}
           onCreated={handleProductCreated}
           settings={settings}
+        />
+      )}
+
+      {/* ── PRINT SETTINGS MODAL (NEW) ────────────────────────── */}
+      {showPrintSettings && (
+        <PrintSettingsModal
+          onClose={() => setShowPrintSettings(false)}
+          printerName={printerName}
+          onPrinterChange={handlePrinterChange}
+          qzStatus={qzStatus}
+          settings={settings}
+          onTestPrint={() => {}}
         />
       )}
     </div>
