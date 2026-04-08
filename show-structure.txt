@@ -585,7 +585,7 @@
    📄 StoreProvider.js
 📁 assets
    📄 assets.js
-
+   📄 upload_area.svg
 📄 checkdb.mjs
 📄 checkSales.mjs
 📁 components
