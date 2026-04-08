@@ -1,24 +1,8 @@
+// app/store/billing/page.jsx
 'use client';
-/**
- * /app/store/billing/page.jsx
- * ─────────────────────────────────────────────────────────────
- * Offline-first POS Billing System — v3
- *
- * NEW in v3:
- * ✅ Full Billing History tab — merges DB bills + offline local bills
- * ✅ History shows: bill number, date, items, total, payment mode, sync status
- * ✅ Search + filter in history (by date, payment mode, keyword)
- * ✅ Today's summary stats in history header
- * ✅ Correct stock deduction flow:
- *      Online  → deduct via /api/inventory/deduct (with billId)
- *      Offline → save locally, deduct on sync via /api/store/billing
- * ✅ No duplicate deduction — billId passed to deduct API
- * ✅ Sync sends bills → backend deducts stock atomically
- * ✅ All panels see correct stock after sync
- * ─────────────────────────────────────────────────────────────
- */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import {
   Search,
   Barcode,
@@ -44,22 +28,23 @@ import {
   Minimize,
   History,
   TrendingUp,
-  Package,
   Filter,
   ChevronDown,
   Eye,
   AlertTriangle,
+  ScanLine,
+  PackagePlus,
 } from 'lucide-react';
-import { getStoreSettings, calculateTax, formatCurrency } from '@/lib/storeSettings';
+import { calculateTax, formatCurrency } from '@/lib/storeSettings';
 
-// ─── localStorage keys ────────────────────────────────────────────────────────
-const LS_PRODUCTS = 'pos_products_cache';
-const LS_PRODUCTS_TS = 'pos_products_cache_ts';
+// ─── localStorage keys ────────────────────────────────────────────
+const LS_PRODUCTS = 'store_pos_products_cache';
+const LS_PRODUCTS_TS = 'store_pos_products_cache_ts';
 const PRODUCT_CACHE_TTL = 10 * 60 * 1000; // 10 min
 
-// ─── IndexedDB helpers ────────────────────────────────────────────────────────
-const DB_NAME = 'pos_billing_db';
-const DB_VERSION = 2;
+// ─── IndexedDB ────────────────────────────────────────────────────
+const DB_NAME = 'store_pos_billing_db';
+const DB_VERSION = 1;
 const STORE_LOCAL = 'bills_local';
 const STORE_QUEUE = 'bills_queue';
 
@@ -83,10 +68,9 @@ function openDB() {
 
 async function idbPut(storeName, value) {
   const db = await openDB();
-  const tx = db.transaction(storeName, 'readwrite');
-  const st = tx.objectStore(storeName);
   return new Promise((res, rej) => {
-    const r = st.put(value);
+    const tx = db.transaction(storeName, 'readwrite');
+    const r = tx.objectStore(storeName).put(value);
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
@@ -94,10 +78,9 @@ async function idbPut(storeName, value) {
 
 async function idbGetAll(storeName) {
   const db = await openDB();
-  const tx = db.transaction(storeName, 'readonly');
-  const st = tx.objectStore(storeName);
   return new Promise((res, rej) => {
-    const r = st.getAll();
+    const tx = db.transaction(storeName, 'readonly');
+    const r = tx.objectStore(storeName).getAll();
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
@@ -105,10 +88,9 @@ async function idbGetAll(storeName) {
 
 async function idbDelete(storeName, key) {
   const db = await openDB();
-  const tx = db.transaction(storeName, 'readwrite');
-  const st = tx.objectStore(storeName);
   return new Promise((res, rej) => {
-    const r = st.delete(key);
+    const tx = db.transaction(storeName, 'readwrite');
+    const r = tx.objectStore(storeName).delete(key);
     r.onsuccess = () => res();
     r.onerror = () => rej(r.error);
   });
@@ -116,16 +98,15 @@ async function idbDelete(storeName, key) {
 
 async function idbCount(storeName) {
   const db = await openDB();
-  const tx = db.transaction(storeName, 'readonly');
-  const st = tx.objectStore(storeName);
   return new Promise((res, rej) => {
-    const r = st.count();
+    const tx = db.transaction(storeName, 'readonly');
+    const r = tx.objectStore(storeName).count();
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
 }
 
-// ─── Product cache (localStorage) ────────────────────────────────────────────
+// ─── Product cache ────────────────────────────────────────────────
 function saveProductsToCache(products) {
   try {
     localStorage.setItem(LS_PRODUCTS, JSON.stringify(products));
@@ -157,15 +138,19 @@ function searchLocal(products, query) {
     .slice(0, 8);
 }
 
-// ─── Bill number ──────────────────────────────────────────────────────────────
+function findProductByBarcode(products, barcode) {
+  if (!barcode) return null;
+  const b = barcode.trim().toLowerCase();
+  return products.find((p) => p.barcode?.toLowerCase() === b) || null;
+}
+
 function generateBillNumber() {
   const now = new Date();
   const date = now.toISOString().slice(0, 10).replace(/-/g, '');
   const ms = String(now.getTime()).slice(-5);
-  return `BILL-${date}-${ms}`;
+  return `SBILL-${date}-${ms}`;
 }
 
-// ─── Payment modes ────────────────────────────────────────────────────────────
 const PAYMENT_MODES = [
   { id: 'CASH', label: 'Cash', icon: Banknote },
   { id: 'CARD', label: 'Card', icon: CreditCard },
@@ -180,12 +165,269 @@ const PM_COLORS = {
   OTHER: 'bg-slate-100 text-slate-600',
 };
 
-// ─── Main component ───────────────────────────────────────────────────────────
-export default function BillingPage() {
-  // ── Tab ────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState('billing'); // 'billing' | 'history'
+// ─── BarcodeInput — always focused, captures USB scanner ──────────
+function BarcodeInput({ onScan, disabled = false }) {
+  const inputRef = useRef(null);
+  const [value, setValue] = useState('');
+  const lockRef = useRef(null);
 
-  // ── Billing state ──────────────────────────────────────────────
+  useEffect(() => {
+    if (disabled) return;
+    const focus = () => {
+      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
+    };
+    focus();
+    lockRef.current = setInterval(focus, 500);
+    const onClick = (e) => {
+      const tag = e.target.tagName.toLowerCase();
+      if (
+        !['input', 'textarea', 'button', 'select', 'a'].includes(tag) &&
+        !e.target.closest('[role="dialog"]')
+      ) {
+        setTimeout(() => inputRef.current?.focus(), 0);
+      }
+    };
+    document.addEventListener('click', onClick);
+    return () => {
+      clearInterval(lockRef.current);
+      document.removeEventListener('click', onClick);
+    };
+  }, [disabled]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const barcode = value.trim();
+      if (barcode) {
+        onScan(barcode);
+        setValue('');
+      }
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500">
+        <ScanLine size={16} />
+      </div>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        placeholder="Scan barcode (auto-focused)…"
+        className="w-full pl-9 pr-4 py-2.5 rounded-xl border-2 border-indigo-300 bg-indigo-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder:text-indigo-400 font-mono disabled:opacity-50"
+        autoComplete="off"
+        spellCheck={false}
+      />
+      {value && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-indigo-500 font-mono bg-indigo-100 px-1.5 py-0.5 rounded">
+          {value.length}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── CreateProductModal — unknown barcode scanned ─────────────────
+function CreateProductModal({ barcode, onClose, onCreated, getToken, settings }) {
+  const [form, setForm] = useState({
+    name: '',
+    price: '',
+    mrp: '',
+    quantity: '1',
+    barcode: barcode || '',
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const nameRef = useRef(null);
+  const fmt = (n) => formatCurrency(n, settings);
+
+  useEffect(() => {
+    setTimeout(() => nameRef.current?.focus(), 100);
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!form.name.trim() || !form.price) {
+      setError('Name and price are required.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const token = await getToken();
+      // Use FormData since store product API expects formData
+      const fd = new FormData();
+      fd.append('name', form.name.trim());
+      fd.append('description', form.name.trim());
+      fd.append('price', form.price);
+      fd.append('mrp', form.mrp || form.price);
+      fd.append('quantity', form.quantity || '1');
+      fd.append('category', JSON.stringify(['General']));
+      // barcode stored via separate field if schema supports it
+      const res = await fetch('/api/store/product', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create product');
+      onCreated(data.product);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSubmit();
+          }
+          if (e.key === 'Escape') onClose();
+        }}
+      >
+        <div className="flex items-center gap-3 mb-5">
+          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+            <PackagePlus size={20} className="text-indigo-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800">Create new product</h3>
+            <p className="text-xs text-slate-400 font-mono mt-0.5">Barcode: {barcode}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="ml-auto p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        {error && (
+          <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            {error}
+          </div>
+        )}
+        <div className="space-y-3">
+          <div>
+            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+              Product Name *
+            </label>
+            <input
+              ref={nameRef}
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+              placeholder="e.g. Coconut Oil 500ml"
+              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                Selling Price *
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.price}
+                onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
+                placeholder="0.00"
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+                MRP
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.mrp}
+                onChange={(e) => setForm((p) => ({ ...p, mrp: e.target.value }))}
+                placeholder="Same as price"
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+              Opening Stock
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={form.quantity}
+              onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
+              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+              Barcode
+            </label>
+            <input
+              type="text"
+              value={form.barcode}
+              onChange={(e) => setForm((p) => ({ ...p, barcode: e.target.value }))}
+              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 disabled:bg-indigo-300 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <PackagePlus size={16} />
+                Create &amp; Add to Cart
+              </>
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-3 text-slate-500 hover:bg-slate-100 rounded-xl text-sm"
+          >
+            Cancel
+          </button>
+        </div>
+        <p className="text-center text-[10px] text-slate-400 mt-3">
+          Press Enter to save · Esc to cancel
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MAIN PAGE
+// ─────────────────────────────────────────────────────────────────
+export default function StoreBillingPage() {
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+
+  // ── State ──────────────────────────────────────────────────────
+  const [settings, setSettings] = useState(null);
+  const [activeTab, setActiveTab] = useState('billing');
   const [searchQuery, setSearchQuery] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -193,7 +435,6 @@ export default function BillingPage() {
   const [billDiscount, setBillDiscount] = useState(0);
   const [paymentMode, setPaymentMode] = useState('CASH');
   const [note, setNote] = useState('');
-  const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [successBill, setSuccessBill] = useState(null);
@@ -205,10 +446,11 @@ export default function BillingPage() {
   const [editingQty, setEditingQty] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
-
-  // ── History state ──────────────────────────────────────────────
-  const [historyBills, setHistoryBills] = useState([]); // from DB
-  const [localBills, setLocalBills] = useState([]); // from IndexedDB
+  const [scanMode, setScanMode] = useState(true);
+  const [createProductModal, setCreateProductModal] = useState(null);
+  const [lastScanFeedback, setLastScanFeedback] = useState(null);
+  const [localBills, setLocalBills] = useState([]);
+  const [historyBills, setHistoryBills] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyTotal, setHistoryTotal] = useState(0);
   const [historyPage, setHistoryPage] = useState(1);
@@ -227,6 +469,7 @@ export default function BillingPage() {
   const searchTimer = useRef(null);
   const apiCache = useRef({});
   const historyTimer = useRef(null);
+  const feedbackTimer = useRef(null);
 
   // ── Computed ───────────────────────────────────────────────────
   const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity - (i.itemDiscount || 0), 0);
@@ -235,73 +478,82 @@ export default function BillingPage() {
   const grandTotal = taxResult.total;
   const fmt = (n) => formatCurrency(n, settings);
 
-  // ─────────────────────────────────────────────────────────────
-  // Init
-  // ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    getStoreSettings().then(setSettings).catch(console.error);
+  const taxLabel =
+    settings?.taxType === 'GST_SPLIT'
+      ? `GST (CGST ${settings.cgst}% + SGST ${settings.sgst}%)`
+      : `Tax (${settings?.taxPercent || 0}%)`;
 
-    const handleOnline = () => {
+  // ── Scan feedback ──────────────────────────────────────────────
+  const showScanFeedback = useCallback((type, message) => {
+    clearTimeout(feedbackTimer.current);
+    setLastScanFeedback({ type, message });
+    feedbackTimer.current = setTimeout(() => setLastScanFeedback(null), 2000);
+  }, []);
+
+  // ── Init ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+
+    // Load settings
+    getToken().then((token) => {
+      fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => r.json())
+        .then((d) => setSettings(d.settings || null))
+        .catch(console.error);
+    });
+
+    // Online/offline
+    const onOnline = () => {
       setIsOnline(true);
       triggerSync();
       refreshProductCache();
     };
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
     setIsOnline(navigator.onLine);
 
     refreshQueueCount();
 
-    // Load local bills
-    idbGetAll(STORE_LOCAL).then((bills) => {
-      const sorted = bills.sort((a, b) => b.createdAt - a.createdAt);
-      setLocalBills(sorted);
-    });
+    idbGetAll(STORE_LOCAL).then((bills) =>
+      setLocalBills(bills.sort((a, b) => b.createdAt - a.createdAt))
+    );
+    idbGetAll(STORE_QUEUE).then((q) => setQueueBillIds(new Set(q.map((b) => b.localId))));
 
-    // Load queue bill IDs for sync-status indicator
-    idbGetAll(STORE_QUEUE).then((q) => {
-      setQueueBillIds(new Set(q.map((b) => b.localId)));
-    });
-
-    searchRef.current?.focus();
-
-    const handleFSChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handleFSChange);
+    const onFS = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFS);
 
     const cached = getProductsFromCache();
     if (cached) setLocalProducts(cached);
     if (navigator.onLine) refreshProductCache();
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      document.removeEventListener('fullscreenchange', handleFSChange);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('fullscreenchange', onFS);
       clearTimeout(syncTimerRef.current);
+      clearTimeout(feedbackTimer.current);
     };
-  }, []); // eslint-disable-line
+  }, [isLoaded, isSignedIn]); // eslint-disable-line
 
-  // ESC to close suggestions
+  // ESC closes modals
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
         setSuggestions([]);
         setShowSuggestions(false);
-        setActiveSuggIdx(-1);
+        if (createProductModal) setCreateProductModal(null);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [createProductModal]);
 
-  // Load history when tab switches to history or filters change
+  // Load history on tab switch / filter
   useEffect(() => {
-    if (activeTab === 'history') {
-      loadHistory(1);
-    }
+    if (activeTab === 'history') loadHistory(1);
   }, [activeTab, historyPM, historyDateFrom, historyDateTo]); // eslint-disable-line
 
-  // Debounced history search
   useEffect(() => {
     if (activeTab !== 'history') return;
     clearTimeout(historyTimer.current);
@@ -309,12 +561,13 @@ export default function BillingPage() {
     return () => clearTimeout(historyTimer.current);
   }, [historySearch]); // eslint-disable-line
 
-  // ─────────────────────────────────────────────────────────────
-  // Product cache
-  // ─────────────────────────────────────────────────────────────
-  const refreshProductCache = async () => {
+  // ── Product cache ──────────────────────────────────────────────
+  const refreshProductCache = useCallback(async () => {
     try {
-      const res = await fetch('/api/products?limit=500');
+      const token = await getToken();
+      const res = await fetch('/api/products?limit=500', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       const products = data.products || [];
       setLocalProducts(products);
@@ -322,42 +575,44 @@ export default function BillingPage() {
     } catch (e) {
       console.warn('Product cache refresh failed:', e);
     }
-  };
+  }, [getToken]);
 
-  // ─────────────────────────────────────────────────────────────
-  // History loader
-  // ─────────────────────────────────────────────────────────────
-  const loadHistory = async (page = 1) => {
-    setHistoryLoading(true);
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: '50',
-        ...(historySearch && { search: historySearch }),
-        ...(historyPM && { paymentMode: historyPM }),
-        ...(historyDateFrom && { dateFrom: historyDateFrom }),
-        ...(historyDateTo && { dateTo: historyDateTo }),
-      });
-      const res = await fetch(`/api/store/billing?${params}`);
-      const data = await res.json();
-      setHistoryBills(data.bills || []);
-      setHistoryTotal(data.total || 0);
-      setHistoryPage(page);
-      setTodayStats(data.todayStats || { count: 0, revenue: 0 });
-    } catch (e) {
-      console.warn('History load failed:', e);
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
+  // ── History loader ─────────────────────────────────────────────
+  const loadHistory = useCallback(
+    async (page = 1) => {
+      setHistoryLoading(true);
+      try {
+        const token = await getToken();
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: '50',
+          ...(historySearch && { search: historySearch }),
+          ...(historyPM && { paymentMode: historyPM }),
+          ...(historyDateFrom && { dateFrom: historyDateFrom }),
+          ...(historyDateTo && { dateTo: historyDateTo }),
+        });
+        const res = await fetch(`/api/store/billing?${params}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        setHistoryBills(data.bills || []);
+        setHistoryTotal(data.total || 0);
+        setHistoryPage(page);
+        setTodayStats(data.todayStats || { count: 0, revenue: 0 });
+      } catch (e) {
+        console.warn('History load failed:', e);
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [getToken, historySearch, historyPM, historyDateFrom, historyDateTo]
+  );
 
-  // ─────────────────────────────────────────────────────────────
-  // Search
-  // ─────────────────────────────────────────────────────────────
+  // ── Text search (search mode) ──────────────────────────────────
   useEffect(() => {
+    if (scanMode) return;
     clearTimeout(searchTimer.current);
     const q = searchQuery.trim();
-
     if (!q) {
       setSuggestions([]);
       setShowSuggestions(false);
@@ -381,7 +636,10 @@ export default function BillingPage() {
     searchTimer.current = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const res = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
+        const token = await getToken();
+        const res = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = await res.json();
         const results = data.products || [];
         apiCache.current[q] = results;
@@ -398,20 +656,16 @@ export default function BillingPage() {
     }, 150);
 
     return () => clearTimeout(searchTimer.current);
-  }, [searchQuery, isOnline]); // eslint-disable-line
+  }, [searchQuery, isOnline, scanMode, getToken, localProducts]);
 
-  // ─────────────────────────────────────────────────────────────
-  // Fullscreen
-  // ─────────────────────────────────────────────────────────────
+  // ── Fullscreen ─────────────────────────────────────────────────
   const toggleFullscreen = () => {
     if (!document.fullscreenElement)
       document.documentElement.requestFullscreen().catch(console.error);
     else document.exitFullscreen().catch(console.error);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Keyboard nav
-  // ─────────────────────────────────────────────────────────────
+  // ── Keyboard nav ───────────────────────────────────────────────
   const handleSearchKeyDown = (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
@@ -426,9 +680,7 @@ export default function BillingPage() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Cart actions
-  // ─────────────────────────────────────────────────────────────
+  // ── Cart ───────────────────────────────────────────────────────
   const addToCart = useCallback(
     (product) => {
       const existing = cartItems.findIndex((i) => i.productId === product.id);
@@ -457,16 +709,36 @@ export default function BillingPage() {
       setSuggestions([]);
       setShowSuggestions(false);
       setActiveSuggIdx(-1);
-      searchRef.current?.focus();
+      showScanFeedback('success', `✓ ${product.name}`);
+      if (!scanMode) searchRef.current?.focus();
     },
-    [cartItems]
+    [cartItems, scanMode, showScanFeedback]
+  );
+
+  // ── Barcode scan ───────────────────────────────────────────────
+  const handleBarcodeScanned = useCallback(
+    (barcode) => {
+      const product = findProductByBarcode(localProducts, barcode);
+      if (!product) {
+        showScanFeedback('error', `Unknown: ${barcode}`);
+        setCreateProductModal({ barcode });
+        return;
+      }
+      const existingIdx = cartItems.findIndex((i) => i.productId === product.id);
+      if (existingIdx >= 0) {
+        setDuplicateModal({ product, existingIdx });
+      } else {
+        addToCart(product);
+      }
+    },
+    [localProducts, cartItems, addToCart, showScanFeedback]
   );
 
   const handleDuplicateIncreaseQty = () => {
     if (!duplicateModal) return;
     updateQuantity(duplicateModal.existingIdx, cartItems[duplicateModal.existingIdx].quantity + 1);
+    showScanFeedback('success', `+1 qty: ${duplicateModal.product.name}`);
     setDuplicateModal(null);
-    searchRef.current?.focus();
   };
 
   const handleDuplicateNewRow = () => {
@@ -487,9 +759,38 @@ export default function BillingPage() {
         _originalId: p.id,
       },
     ]);
+    showScanFeedback('success', `New row: ${p.name}`);
     setDuplicateModal(null);
-    searchRef.current?.focus();
   };
+
+  const handleProductCreated = useCallback(
+    (product) => {
+      setCreateProductModal(null);
+      setLocalProducts((prev) => {
+        const updated = [...prev, product];
+        saveProductsToCache(updated);
+        return updated;
+      });
+      apiCache.current = {};
+      setCartItems((prev) => [
+        ...prev,
+        {
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          quantity: 1,
+          itemDiscount: 0,
+          total: product.price,
+          sku: product.sku || '',
+          barcode: product.barcode || '',
+          stock: product.quantity || 0,
+        },
+      ]);
+      showScanFeedback('success', `Created & added: ${product.name}`);
+      setTimeout(refreshProductCache, 1000);
+    },
+    [showScanFeedback, refreshProductCache]
+  );
 
   const updateQuantity = (idx, qty) => {
     const item = cartItems[idx];
@@ -519,17 +820,14 @@ export default function BillingPage() {
     setBillDiscount(0);
     setNote('');
     setPaymentMode('CASH');
-    searchRef.current?.focus();
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Complete bill
-  // ─────────────────────────────────────────────────────────────
+  // ── Complete bill ──────────────────────────────────────────────
   const completeBill = async () => {
     if (!cartItems.length) return;
     setLoading(true);
 
-    const localId = `bill_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const localId = `sbill_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const billNumber = generateBillNumber();
     const now = Date.now();
 
@@ -543,7 +841,7 @@ export default function BillingPage() {
       paymentMode,
       note: note || null,
       createdAt: now,
-      synced: false, // track sync status
+      synced: false,
       items: cartItems.map((it) => ({
         productId: it._originalId || it.productId,
         name: it.name,
@@ -568,21 +866,19 @@ export default function BillingPage() {
     };
 
     try {
-      // Always save to IndexedDB first (offline-safe)
       await idbPut(STORE_LOCAL, billData);
       await idbPut(STORE_QUEUE, billData);
-
-      // Update local bills list immediately
       setLocalBills((prev) => [billData, ...prev].slice(0, 200));
       setQueueBillIds((prev) => new Set([...prev, localId]));
 
-      // ── Online: deduct stock immediately (with billId for dedup) ──
+      // Deduct stock immediately if online
       if (isOnline) {
+        const token = await getToken();
         fetch('/api/inventory/deduct', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({
-            billId: billNumber, // unique bill number as dedup key
+            billId: billNumber,
             items: cartItems.map((it) => ({
               productId: it._originalId || it.productId,
               quantity: it.quantity,
@@ -590,20 +886,12 @@ export default function BillingPage() {
           }),
         }).catch(console.error);
       }
-      // ── Offline: stock deduction happens during sync ──────────────
 
       setSuccessBill(billData);
       await refreshQueueCount();
-
-      setCartItems([]);
-      setBillDiscount(0);
-      setNote('');
-      setPaymentMode('CASH');
-
+      clearCart();
       triggerSync();
       setTimeout(() => printBill(billData), 400);
-
-      // Refresh history if on history tab
       if (activeTab === 'history') loadHistory(1);
     } catch (err) {
       console.error('completeBill error:', err);
@@ -613,9 +901,7 @@ export default function BillingPage() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Sync
-  // ─────────────────────────────────────────────────────────────
+  // ── Sync ───────────────────────────────────────────────────────
   const triggerSync = useCallback(() => {
     clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(runSync, 1500);
@@ -625,45 +911,32 @@ export default function BillingPage() {
     if (syncing) return;
     const queue = await idbGetAll(STORE_QUEUE);
     if (!queue.length) return;
-
     setSyncing(true);
     try {
+      const token = await getToken();
       const res = await fetch('/api/store/billing', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(queue),
       });
       if (!res.ok) throw new Error('sync failed');
-      const { saved = [], failed = [] } = await res.json();
+      const { saved = [] } = await res.json();
 
-      // Mark synced bills in local store + remove from queue
       for (const { localId } of saved) {
         await idbDelete(STORE_QUEUE, localId);
-        // Update local bill to mark as synced
         const allLocal = await idbGetAll(STORE_LOCAL);
         const bill = allLocal.find((b) => b.localId === localId);
         if (bill) await idbPut(STORE_LOCAL, { ...bill, synced: true });
       }
 
-      // Refresh queue IDs
       const remaining = await idbGetAll(STORE_QUEUE);
       setQueueBillIds(new Set(remaining.map((b) => b.localId)));
-
-      // Refresh local bills display
       idbGetAll(STORE_LOCAL).then((bills) =>
         setLocalBills(bills.sort((a, b) => b.createdAt - a.createdAt))
       );
-
       await refreshQueueCount();
-
-      if (failed.length) {
-        syncTimerRef.current = setTimeout(runSync, 30000);
-      }
-
-      // Refresh DB history
       if (activeTab === 'history') loadHistory(historyPage);
-    } catch (err) {
-      console.error('Sync error:', err);
+    } catch {
       syncTimerRef.current = setTimeout(runSync, 30000);
     } finally {
       setSyncing(false);
@@ -675,9 +948,7 @@ export default function BillingPage() {
     setQueueCount(c);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Print
-  // ─────────────────────────────────────────────────────────────
+  // ── Print ──────────────────────────────────────────────────────
   const printBill = (bill) => {
     const s = bill.settings || {};
     const currency = s.currency || 'INR';
@@ -703,31 +974,25 @@ export default function BillingPage() {
 
     let taxRows = '';
     if (s.taxType === 'GST_SPLIT') {
-      taxRows = `
-        <tr><td colspan="3" style="padding:2px 6px">CGST (${s.cgst}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount / 2)}</td></tr>
-        <tr><td colspan="3" style="padding:2px 6px">SGST (${s.sgst}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount / 2)}</td></tr>`;
+      taxRows = `<tr><td colspan="3" style="padding:2px 6px">CGST (${s.cgst}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount / 2)}</td></tr>
+                 <tr><td colspan="3" style="padding:2px 6px">SGST (${s.sgst}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount / 2)}</td></tr>`;
     } else if (bill.taxAmount > 0) {
       taxRows = `<tr><td colspan="3" style="padding:2px 6px">Tax (${s.taxPercent}%)</td><td style="text-align:right;padding:2px 6px">${fmtN(bill.taxAmount)}</td></tr>`;
     }
 
     const html = `<html><head><title>${bill.billNumber}</title>
-      <style>
-        body{font-family:monospace;font-size:13px;max-width:320px;margin:0 auto;}
-        h2{text-align:center;margin:4px 0;font-size:16px;}
-        p{text-align:center;margin:2px 0;font-size:11px;color:#555;}
-        table{width:100%;border-collapse:collapse;}
-        th{background:#f5f5f5;padding:4px 6px;text-align:left;border-bottom:2px solid #ccc;}
-        .total-row td{font-weight:bold;font-size:14px;border-top:2px solid #ccc;padding:4px 6px;}
-        .footer{text-align:center;margin-top:12px;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:6px;}
-        @media print{body{max-width:100%;}}
-      </style></head><body>
+      <style>body{font-family:monospace;font-size:13px;max-width:320px;margin:0 auto;}
+      h2{text-align:center;margin:4px 0;font-size:16px;}p{text-align:center;margin:2px 0;font-size:11px;color:#555;}
+      table{width:100%;border-collapse:collapse;}th{background:#f5f5f5;padding:4px 6px;text-align:left;border-bottom:2px solid #ccc;}
+      .total-row td{font-weight:bold;font-size:14px;border-top:2px solid #ccc;padding:4px 6px;}
+      .footer{text-align:center;margin-top:12px;font-size:11px;color:#888;border-top:1px dashed #ccc;padding-top:6px;}
+      @media print{body{max-width:100%;}}</style></head><body>
       ${s.showStoreName && s.storeName ? `<h2>${s.storeName}</h2>` : ''}
       ${s.address ? `<p>${s.address}</p>` : ''}
       ${s.showGST && s.gstNumber ? `<p>GST: ${s.gstNumber}</p>` : ''}
       <p>─────────────────────</p>
       <p><strong>${bill.billNumber}</strong></p>
-      <p>${dateStr}</p>
-      <p>Payment: ${bill.paymentMode}</p>
+      <p>${dateStr}</p><p>Payment: ${bill.paymentMode}</p>
       <p>─────────────────────</p>
       <table>
         <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead>
@@ -752,18 +1017,11 @@ export default function BillingPage() {
     }, 300);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Merge DB bills + local-only bills for history display
-  // ─────────────────────────────────────────────────────────────
+  // ── Merged history ─────────────────────────────────────────────
   const mergedHistoryBills = () => {
-    // DB bills (already synced)
     const dbSet = new Set(historyBills.map((b) => b.billNumber));
-
-    // Local-only bills not yet in DB (unsynced)
     const unsyncedLocal = localBills.filter((b) => !dbSet.has(b.billNumber));
-
-    // Merge: unsynced local first, then DB bills
-    const merged = [
+    return [
       ...unsyncedLocal.map((b) => ({
         ...b,
         _source: 'local',
@@ -771,92 +1029,74 @@ export default function BillingPage() {
       })),
       ...historyBills.map((b) => ({ ...b, _source: 'db', _synced: true })),
     ];
-
-    // Filter by local search if provided
-    if (historySearch && historyBills.length === 0) {
-      const q = historySearch.toLowerCase();
-      return merged.filter(
-        (b) => b.billNumber?.toLowerCase().includes(q) || b.note?.toLowerCase().includes(q)
-      );
-    }
-
-    return merged;
   };
 
-  const taxLabel =
-    settings?.taxType === 'GST_SPLIT'
-      ? `GST (CGST ${settings.cgst}% + SGST ${settings.sgst}%)`
-      : `Tax (${settings?.taxPercent || 0}%)`;
+  if (!isLoaded) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="w-8 h-8 border-4 border-indigo-200 border-t-indigo-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   // ─────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
-      {/* ── TOP BAR ─────────────────────────────────────────────── */}
+      {/* ── TOP BAR ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-200 shadow-sm z-20 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <Receipt size={20} className="text-amber-500" />
+            <Receipt size={20} className="text-indigo-500" />
             <span className="font-bold text-slate-800 text-base tracking-tight">POS Billing</span>
-            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-semibold">
-              LIVE
+            <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold">
+              STORE
             </span>
           </div>
-
-          {/* Tab switcher */}
           <div className="flex items-center bg-slate-100 rounded-lg p-0.5 ml-2">
-            <button
-              onClick={() => setActiveTab('billing')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                activeTab === 'billing'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <ShoppingCart size={12} />
-              New Bill
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                activeTab === 'history'
-                  ? 'bg-white text-slate-800 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              <History size={12} />
-              History
-              {localBills.length > 0 && (
-                <span className="bg-amber-400 text-white text-[9px] px-1.5 rounded-full ml-0.5">
-                  {localBills.length}
-                </span>
-              )}
-            </button>
+            {[
+              { key: 'billing', label: 'New Bill', icon: <ShoppingCart size={12} /> },
+              { key: 'history', label: 'History', icon: <History size={12} /> },
+            ].map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                  activeTab === tab.key
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {tab.icon} {tab.label}
+                {tab.key === 'history' && localBills.length > 0 && (
+                  <span className="bg-indigo-400 text-white text-[9px] px-1.5 rounded-full ml-0.5">
+                    {localBills.length}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           {!isOnline && (
             <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-1 rounded-lg font-semibold border border-orange-200">
-              ⚡ Offline — {localProducts.length} products cached
+              ⚡ Offline — {localProducts.length} cached
             </span>
           )}
-
           <button
             onClick={runSync}
             disabled={syncing || queueCount === 0}
-            title={queueCount > 0 ? `${queueCount} bills waiting to sync` : 'All synced'}
             className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-medium transition-all ${
               queueCount > 0
-                ? 'bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200'
+                ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
                 : 'bg-slate-50 text-slate-400 border border-slate-200'
             }`}
           >
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
             {queueCount > 0 ? `${queueCount} unsynced` : 'Synced'}
           </button>
-
           <div
             className={`flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg ${
               isOnline ? 'text-green-600 bg-green-50' : 'text-red-500 bg-red-50'
@@ -865,100 +1105,143 @@ export default function BillingPage() {
             {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
             {isOnline ? 'Online' : 'Offline'}
           </div>
-
           <button
             onClick={toggleFullscreen}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors border border-slate-200"
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 border border-slate-200"
           >
             {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
           </button>
         </div>
       </div>
 
-      {/* ── CONTENT ─────────────────────────────────────────────── */}
+      {/* ── CONTENT ─────────────────────────────────────────── */}
       {activeTab === 'billing' ? (
-        /* ══════════════════ BILLING TAB ══════════════════ */
         <div className="flex flex-1 overflow-hidden">
-          {/* LEFT — Search + Cart */}
+          {/* LEFT — Product search + Cart */}
           <div className="flex flex-col w-full lg:w-[58%] xl:w-[62%] border-r border-slate-200 bg-white overflow-hidden">
-            {/* Search */}
-            <div className="p-4 border-b border-slate-100 relative">
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  {searchLoading ? (
-                    <div className="w-4 h-4 border-2 border-slate-300 border-t-amber-500 rounded-full animate-spin" />
-                  ) : (
-                    <Search size={15} />
-                  )}
-                </div>
-                <input
-                  ref={searchRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  onFocus={() => suggestions.length && setShowSuggestions(true)}
-                  onBlur={() => setTimeout(() => setShowSuggestions(false), 180)}
-                  placeholder={
-                    isOnline
-                      ? 'Scan barcode or type name / SKU…'
-                      : '🔌 Offline — searching local cache…'
-                  }
-                  className="w-full pl-9 pr-20 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent placeholder:text-slate-400"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-slate-300">
-                  <Barcode size={14} />
-                  <span className="text-[10px] font-mono">SCAN</span>
-                </div>
-              </div>
-
-              {showSuggestions && suggestions.length > 0 && (
-                <div className="absolute left-4 right-4 top-[68px] z-40 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
-                  {suggestions.map((p, i) => (
+            {/* Input area */}
+            <div className="p-4 border-b border-slate-100 space-y-2">
+              {/* Mode toggle */}
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+                  {[
+                    { key: true, label: 'Scanner', icon: <ScanLine size={12} /> },
+                    { key: false, label: 'Search', icon: <Search size={12} /> },
+                  ].map((mode) => (
                     <button
-                      key={p.id}
-                      onMouseDown={() => addToCart(p)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-amber-50 ${
-                        i === activeSuggIdx ? 'bg-amber-50' : ''
-                      } ${i !== 0 ? 'border-t border-slate-100' : ''}`}
+                      key={String(mode.key)}
+                      onClick={() => {
+                        setScanMode(mode.key);
+                        if (!mode.key) setTimeout(() => searchRef.current?.focus(), 50);
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        scanMode === mode.key
+                          ? 'bg-white text-indigo-700 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
                     >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {p.sku && (
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              SKU: {p.sku}
-                            </span>
-                          )}
-                          {p.barcode && (
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              <Barcode size={9} className="inline" />
-                              {p.barcode}
-                            </span>
-                          )}
-                          <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              p.quantity > 10
-                                ? 'bg-green-100 text-green-700'
-                                : p.quantity > 0
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-red-100 text-red-700'
-                            }`}
-                          >
-                            {p.quantity > 0 ? `${p.quantity} in stock` : 'Out of stock'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <p className="text-sm font-bold text-slate-800">{fmt(p.price)}</p>
-                        {p.mrp > p.price && (
-                          <p className="text-[10px] text-slate-400 line-through">{fmt(p.mrp)}</p>
-                        )}
-                      </div>
+                      {mode.icon} {mode.label}
                     </button>
                   ))}
+                </div>
+                {lastScanFeedback && (
+                  <span
+                    className={`text-xs font-medium px-3 py-1 rounded-full ${
+                      lastScanFeedback.type === 'success'
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-red-100 text-red-700'
+                    }`}
+                  >
+                    {lastScanFeedback.message}
+                  </span>
+                )}
+                <div className="text-[10px] text-slate-400">{localProducts.length} cached</div>
+              </div>
+
+              {/* Barcode input */}
+              {scanMode && (
+                <BarcodeInput
+                  onScan={handleBarcodeScanned}
+                  disabled={!!duplicateModal || !!createProductModal || activeTab !== 'billing'}
+                />
+              )}
+
+              {/* Text search */}
+              {!scanMode && (
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    {searchLoading ? (
+                      <div className="w-4 h-4 border-2 border-slate-300 border-t-indigo-500 rounded-full animate-spin" />
+                    ) : (
+                      <Search size={15} />
+                    )}
+                  </div>
+                  <input
+                    ref={searchRef}
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    onFocus={() => suggestions.length && setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 180)}
+                    placeholder={
+                      isOnline
+                        ? 'Type product name / SKU / barcode…'
+                        : '🔌 Offline — searching local cache…'
+                    }
+                    className="w-full pl-9 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent placeholder:text-slate-400"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full z-40 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden mt-1">
+                      {suggestions.map((p, i) => (
+                        <button
+                          key={p.id}
+                          onMouseDown={() => addToCart(p)}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-indigo-50 ${
+                            i === activeSuggIdx ? 'bg-indigo-50' : ''
+                          } ${i !== 0 ? 'border-t border-slate-100' : ''}`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {p.sku && (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  SKU: {p.sku}
+                                </span>
+                              )}
+                              {p.barcode && (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  <Barcode size={9} className="inline" />
+                                  {p.barcode}
+                                </span>
+                              )}
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                  p.quantity > 10
+                                    ? 'bg-green-100 text-green-700'
+                                    : p.quantity > 0
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-red-100 text-red-700'
+                                }`}
+                              >
+                                {p.quantity > 0 ? `${p.quantity} in stock` : 'Out of stock'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-sm font-bold text-slate-800">{fmt(p.price)}</p>
+                            {p.mrp > p.price && (
+                              <p className="text-[10px] text-slate-400 line-through">
+                                {fmt(p.mrp)}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -971,24 +1254,26 @@ export default function BillingPage() {
                   <div>
                     <p className="font-medium text-slate-500">Cart is empty</p>
                     <p className="text-sm text-slate-400 mt-1">
-                      Search or scan a product to add it
+                      {scanMode
+                        ? 'Scan a product barcode to add it'
+                        : 'Search or type a product name'}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <Zap size={12} className="text-amber-500" />
-                    <span className="text-amber-700">
-                      Press{' '}
-                      <kbd className="bg-white border border-amber-300 rounded px-1 font-mono text-[10px]">
-                        Enter
-                      </kbd>{' '}
-                      to add first result
-                    </span>
+                  <div className="flex items-center gap-2 text-xs bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
+                    {scanMode ? (
+                      <>
+                        <ScanLine size={12} className="text-indigo-500" />
+                        <span className="text-indigo-700">
+                          Scanner ready — barcode input always focused
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap size={12} className="text-indigo-500" />
+                        <span className="text-indigo-700">Press Enter to add first result</span>
+                      </>
+                    )}
                   </div>
-                  {!isOnline && localProducts.length > 0 && (
-                    <div className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
-                      ⚡ Offline — {localProducts.length} products available locally
-                    </div>
-                  )}
                 </div>
               ) : (
                 cartItems.map((item, idx) => (
@@ -1003,6 +1288,12 @@ export default function BillingPage() {
                       <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-xs text-slate-500">{fmt(item.price)} each</span>
+                        {item.barcode && (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            <Barcode size={9} className="inline mr-0.5" />
+                            {item.barcode}
+                          </span>
+                        )}
                         {item.stock !== undefined && item.stock <= 10 && (
                           <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 rounded-full">
                             Low: {item.stock}
@@ -1016,16 +1307,16 @@ export default function BillingPage() {
                           type="number"
                           min="0"
                           value={item.itemDiscount || ''}
-                          onChange={(e) => updateItemDiscount(idx, e.target.value)}
                           placeholder="0"
-                          className="w-16 text-[11px] border border-slate-200 rounded px-1.5 py-0.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-300"
+                          onChange={(e) => updateItemDiscount(idx, e.target.value)}
+                          className="w-16 text-[11px] border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
                         />
                       </div>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         onClick={() => updateQuantity(idx, item.quantity - 1)}
-                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center"
                       >
                         <Minus size={13} />
                       </button>
@@ -1044,14 +1335,13 @@ export default function BillingPage() {
                           if (e.key === 'Enter') {
                             updateQuantity(idx, parseInt(editingQty?.value || item.quantity) || 1);
                             setEditingQty(null);
-                            searchRef.current?.focus();
                           }
                         }}
-                        className="w-12 text-center text-sm font-bold border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                        className="w-12 text-center text-sm font-bold border border-slate-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                       />
                       <button
                         onClick={() => updateQuantity(idx, item.quantity + 1)}
-                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors"
+                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center"
                       >
                         <Plus size={13} />
                       </button>
@@ -1063,7 +1353,7 @@ export default function BillingPage() {
                     </div>
                     <button
                       onClick={() => removeItem(idx)}
-                      className="w-7 h-7 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors flex-shrink-0"
+                      className="w-7 h-7 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center flex-shrink-0"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -1084,10 +1374,10 @@ export default function BillingPage() {
             )}
           </div>
 
-          {/* RIGHT — Summary + Payment */}
+          {/* RIGHT — Summary + Payment + Complete */}
           <div className="flex flex-col w-full lg:w-[42%] xl:w-[38%] bg-white overflow-y-auto">
             <div className="flex-1 p-4 space-y-4">
-              {/* Summary */}
+              {/* Bill Summary */}
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
                   Bill Summary
@@ -1112,7 +1402,7 @@ export default function BillingPage() {
                         value={billDiscount || ''}
                         onChange={(e) => setBillDiscount(e.target.value)}
                         placeholder="0.00"
-                        className="w-24 text-right text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white"
+                        className="w-24 text-right text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
                       />
                     </div>
                   </div>
@@ -1147,7 +1437,7 @@ export default function BillingPage() {
                       onClick={() => setPaymentMode(pm.id)}
                       className={`flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border-2 transition-all text-xs font-medium ${
                         paymentMode === pm.id
-                          ? 'border-amber-400 bg-amber-50 text-amber-700'
+                          ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
                           : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300'
                       }`}
                     >
@@ -1168,7 +1458,7 @@ export default function BillingPage() {
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Customer name, phone, or any note…"
                   rows={2}
-                  className="w-full text-sm border border-slate-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-amber-300 bg-slate-50 resize-none placeholder:text-slate-400"
+                  className="w-full text-sm border border-slate-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-slate-50 resize-none placeholder:text-slate-400"
                 />
               </div>
             </div>
@@ -1180,7 +1470,7 @@ export default function BillingPage() {
                 disabled={!cartItems.length || loading}
                 className={`w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 transition-all shadow-lg ${
                   cartItems.length && !loading
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700 hover:shadow-xl active:scale-[0.98]'
+                    ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700 hover:shadow-xl active:scale-[0.98]'
                     : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                 }`}
               >
@@ -1204,28 +1494,26 @@ export default function BillingPage() {
           </div>
         </div>
       ) : (
-        /* ══════════════════ HISTORY TAB ══════════════════ */
+        /* ══════════════ HISTORY TAB ══════════════ */
         <div className="flex flex-col flex-1 overflow-hidden bg-slate-50">
-          {/* History header + stats */}
           <div className="bg-white border-b border-slate-200 px-5 py-4 flex-shrink-0">
-            {/* Today stats */}
             <div className="flex items-center gap-4 mb-4">
-              <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-                <TrendingUp size={16} className="text-amber-600" />
+              <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5">
+                <TrendingUp size={16} className="text-indigo-600" />
                 <div>
-                  <p className="text-[10px] text-amber-600 font-medium uppercase tracking-wide">
+                  <p className="text-[10px] text-indigo-600 font-medium uppercase tracking-wide">
                     Today's Revenue
                   </p>
-                  <p className="text-base font-bold text-amber-700">{fmt(todayStats.revenue)}</p>
+                  <p className="text-base font-bold text-indigo-700">{fmt(todayStats.revenue)}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5">
-                <Receipt size={16} className="text-blue-600" />
+              <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                <Receipt size={16} className="text-slate-600" />
                 <div>
-                  <p className="text-[10px] text-blue-600 font-medium uppercase tracking-wide">
+                  <p className="text-[10px] text-slate-600 font-medium uppercase tracking-wide">
                     Today's Bills
                   </p>
-                  <p className="text-base font-bold text-blue-700">{todayStats.count}</p>
+                  <p className="text-base font-bold text-slate-700">{todayStats.count}</p>
                 </div>
               </div>
               {queueCount > 0 && (
@@ -1233,7 +1521,7 @@ export default function BillingPage() {
                   <AlertTriangle size={16} className="text-orange-600" />
                   <div>
                     <p className="text-[10px] text-orange-600 font-medium uppercase tracking-wide">
-                      Unsynced Bills
+                      Unsynced
                     </p>
                     <p className="text-base font-bold text-orange-700">{queueCount}</p>
                   </div>
@@ -1243,21 +1531,19 @@ export default function BillingPage() {
                 <button
                   onClick={() => loadHistory(1)}
                   disabled={historyLoading}
-                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 border border-slate-200 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-slate-500 px-3 py-2 rounded-lg hover:bg-slate-100 border border-slate-200"
                 >
-                  <RefreshCw size={12} className={historyLoading ? 'animate-spin' : ''} />
-                  Refresh
+                  <RefreshCw size={12} className={historyLoading ? 'animate-spin' : ''} /> Refresh
                 </button>
                 <button
                   onClick={() => setShowFilters((v) => !v)}
                   className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${
                     showFilters
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                       : 'text-slate-500 border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  <Filter size={12} />
-                  Filters
+                  <Filter size={12} /> Filters
                   <ChevronDown
                     size={11}
                     className={`transition-transform ${showFilters ? 'rotate-180' : ''}`}
@@ -1266,7 +1552,6 @@ export default function BillingPage() {
               </div>
             </div>
 
-            {/* Search bar */}
             <div className="relative">
               <Search
                 size={14}
@@ -1277,11 +1562,10 @@ export default function BillingPage() {
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
                 placeholder="Search bills by number, note…"
-                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
             </div>
 
-            {/* Filters (collapsible) */}
             {showFilters && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
                 <div>
@@ -1291,7 +1575,7 @@ export default function BillingPage() {
                   <select
                     value={historyPM}
                     onChange={(e) => setHistoryPM(e.target.value)}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   >
                     <option value="">All modes</option>
                     {PAYMENT_MODES.map((pm) => (
@@ -1309,7 +1593,7 @@ export default function BillingPage() {
                     type="date"
                     value={historyDateFrom}
                     onChange={(e) => setHistoryDateFrom(e.target.value)}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
                 </div>
                 <div>
@@ -1320,7 +1604,7 @@ export default function BillingPage() {
                     type="date"
                     value={historyDateTo}
                     onChange={(e) => setHistoryDateTo(e.target.value)}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
                 </div>
                 <div className="flex items-end">
@@ -1344,38 +1628,27 @@ export default function BillingPage() {
           <div className="flex-1 overflow-y-auto p-5">
             {historyLoading && historyBills.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 gap-3">
-                <div className="w-8 h-8 border-3 border-slate-200 border-t-amber-500 rounded-full animate-spin" />
+                <div className="w-8 h-8 border-3 border-slate-200 border-t-indigo-500 rounded-full animate-spin" />
                 <p className="text-sm text-slate-400">Loading bills…</p>
               </div>
             ) : (
               <>
                 <div className="space-y-2">
                   {mergedHistoryBills().map((bill) => {
-                    const isLocal = bill._source === 'local';
                     const isSynced = bill._synced !== false;
                     const isExpanded = expandedBill === (bill.id || bill.localId);
                     const createdAt =
                       bill.createdAt instanceof Date ? bill.createdAt : new Date(bill.createdAt);
-
                     return (
                       <div
                         key={bill.id || bill.localId}
-                        className={`bg-white rounded-xl border transition-all ${
-                          isExpanded
-                            ? 'border-amber-200 shadow-md'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
+                        className={`bg-white rounded-xl border transition-all ${isExpanded ? 'border-indigo-200 shadow-md' : 'border-slate-200 hover:border-slate-300'}`}
                       >
-                        {/* Bill row */}
                         <div className="flex items-center gap-3 p-3.5">
-                          {/* Status dot */}
                           <div
-                            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                              isSynced ? 'bg-green-400' : 'bg-orange-400 animate-pulse'
-                            }`}
+                            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isSynced ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`}
                             title={isSynced ? 'Synced' : 'Pending sync'}
                           />
-
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="text-sm font-bold text-slate-800">{bill.billNumber}</p>
@@ -1385,9 +1658,7 @@ export default function BillingPage() {
                                 </span>
                               )}
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                                  PM_COLORS[bill.paymentMode] || PM_COLORS.OTHER
-                                }`}
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PM_COLORS[bill.paymentMode] || PM_COLORS.OTHER}`}
                               >
                                 {bill.paymentMode}
                               </span>
@@ -1406,13 +1677,12 @@ export default function BillingPage() {
                               )}
                             </div>
                           </div>
-
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <p className="font-bold text-slate-800 text-sm">{fmt(bill.total)}</p>
                             <button
                               onClick={() => printBill(bill)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                              title="Print bill"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                              title="Print"
                             >
                               <Printer size={14} />
                             </button>
@@ -1428,25 +1698,20 @@ export default function BillingPage() {
                           </div>
                         </div>
 
-                        {/* Expanded items */}
                         {isExpanded && bill.items?.length > 0 && (
                           <div className="border-t border-slate-100 px-4 pb-4 pt-3">
                             <div className="bg-slate-50 rounded-lg overflow-hidden">
                               <table className="w-full text-xs">
                                 <thead>
                                   <tr className="border-b border-slate-200">
-                                    <th className="text-left py-2 px-3 text-slate-500 font-medium">
-                                      Item
-                                    </th>
-                                    <th className="text-center py-2 px-3 text-slate-500 font-medium">
-                                      Qty
-                                    </th>
-                                    <th className="text-right py-2 px-3 text-slate-500 font-medium">
-                                      Price
-                                    </th>
-                                    <th className="text-right py-2 px-3 text-slate-500 font-medium">
-                                      Total
-                                    </th>
+                                    {['Item', 'Qty', 'Price', 'Total'].map((h) => (
+                                      <th
+                                        key={h}
+                                        className={`py-2 px-3 text-slate-500 font-medium ${h === 'Item' ? 'text-left' : 'text-right'}`}
+                                      >
+                                        {h}
+                                      </th>
+                                    ))}
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -1458,7 +1723,7 @@ export default function BillingPage() {
                                       <td className="py-2 px-3 text-slate-700 font-medium">
                                         {item.name}
                                       </td>
-                                      <td className="py-2 px-3 text-center text-slate-600">
+                                      <td className="py-2 px-3 text-right text-slate-600">
                                         {item.quantity}
                                       </td>
                                       <td className="py-2 px-3 text-right text-slate-600">
@@ -1504,7 +1769,7 @@ export default function BillingPage() {
                                     >
                                       Grand Total
                                     </td>
-                                    <td className="py-2 px-3 text-right font-bold text-amber-600">
+                                    <td className="py-2 px-3 text-right font-bold text-indigo-600">
                                       {fmt(bill.total)}
                                     </td>
                                   </tr>
@@ -1526,23 +1791,22 @@ export default function BillingPage() {
                   )}
                 </div>
 
-                {/* Pagination */}
                 {historyTotal > 50 && (
                   <div className="flex items-center justify-center gap-3 mt-6">
                     <button
                       onClick={() => loadHistory(historyPage - 1)}
                       disabled={historyPage <= 1 || historyLoading}
-                      className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
                     >
                       Previous
                     </button>
                     <span className="text-sm text-slate-500">
-                      Page {historyPage} · {historyTotal} total bills
+                      Page {historyPage} · {historyTotal} total
                     </span>
                     <button
                       onClick={() => loadHistory(historyPage + 1)}
                       disabled={historyPage * 50 >= historyTotal || historyLoading}
-                      className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
                     >
                       Next
                     </button>
@@ -1554,14 +1818,14 @@ export default function BillingPage() {
         </div>
       )}
 
-      {/* ── SUCCESS TOAST ────────────────────────────────────────── */}
+      {/* ── SUCCESS TOAST ──────────────────────────────────── */}
       {successBill && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-sm font-medium">
           <CheckCircle size={18} />
           <span>Bill {successBill.billNumber} saved!</span>
           <button
             onClick={() => printBill(successBill)}
-            className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-xs transition-colors"
+            className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2.5 py-1 rounded-lg text-xs"
           >
             <Printer size={12} /> Reprint
           </button>
@@ -1571,9 +1835,12 @@ export default function BillingPage() {
         </div>
       )}
 
-      {/* ── DUPLICATE MODAL ──────────────────────────────────────── */}
+      {/* ── DUPLICATE MODAL ────────────────────────────────── */}
       {duplicateModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          role="dialog"
+        >
           <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
@@ -1582,33 +1849,47 @@ export default function BillingPage() {
               <div>
                 <h3 className="font-bold text-slate-800">Already in cart</h3>
                 <p className="text-sm text-slate-500">{duplicateModal.product.name}</p>
+                {duplicateModal.product.barcode && (
+                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                    <Barcode size={9} className="inline mr-0.5" />
+                    {duplicateModal.product.barcode}
+                  </p>
+                )}
               </div>
             </div>
             <div className="space-y-2">
               <button
                 onClick={handleDuplicateIncreaseQty}
-                className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium text-sm transition-colors"
+                className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-medium text-sm"
               >
                 + Increase qty (→ {cartItems[duplicateModal.existingIdx]?.quantity + 1})
               </button>
               <button
                 onClick={handleDuplicateNewRow}
-                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium text-sm transition-colors"
+                className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium text-sm"
               >
                 Add as new line
               </button>
               <button
-                onClick={() => {
-                  setDuplicateModal(null);
-                  searchRef.current?.focus();
-                }}
-                className="w-full py-2.5 text-slate-400 hover:text-slate-600 text-sm transition-colors"
+                onClick={() => setDuplicateModal(null)}
+                className="w-full py-2.5 text-slate-400 hover:text-slate-600 text-sm"
               >
                 Cancel
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── CREATE PRODUCT MODAL ───────────────────────────── */}
+      {createProductModal && (
+        <CreateProductModal
+          barcode={createProductModal.barcode}
+          onClose={() => setCreateProductModal(null)}
+          onCreated={handleProductCreated}
+          getToken={getToken}
+          settings={settings}
+        />
       )}
     </div>
   );

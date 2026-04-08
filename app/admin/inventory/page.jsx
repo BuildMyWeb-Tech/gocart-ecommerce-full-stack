@@ -228,7 +228,7 @@ export default function AdminInventoryPage() {
                     >
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          {inv.product?.images?.[0] && (
+                          {/* {inv.product?.images?.[0] && (
                             <div className="relative w-9 h-9 rounded-lg overflow-hidden border border-slate-100 flex-shrink-0">
                               <Image
                                 src={inv.product.images[0]}
@@ -237,7 +237,7 @@ export default function AdminInventoryPage() {
                                 className="object-cover"
                               />
                             </div>
-                          )}
+                          )} */}
                           <span className="font-medium text-slate-800 line-clamp-1 max-w-[160px]">
                             {inv.product?.name}
                           </span>
