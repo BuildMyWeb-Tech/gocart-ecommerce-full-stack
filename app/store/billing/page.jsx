@@ -779,9 +779,9 @@ function CreateProductModal({ barcode, onClose, onCreated, settings }) {
             Cancel
           </button>
         </div>
-        <p className="text-center text-[10px] text-slate-400 mt-3">
+        {/* <p className="text-center text-[10px] text-slate-400 mt-3">
           Press Enter to save · Esc to cancel
-        </p>
+        </p> */}
       </div>
     </div>
   );

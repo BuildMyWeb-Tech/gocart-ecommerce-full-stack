@@ -1,7 +1,7 @@
 // app/store/manage-product/page.jsx
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
 import { useAuth } from '@clerk/nextjs';
@@ -13,145 +13,338 @@ import {
   PackageOpen,
   Loader2,
   AlertTriangle,
-  Minus,
-  Plus,
+  ChevronDown,
+  ChevronRight,
+  Layers,
   Check,
+  X,
   AlertCircle,
 } from 'lucide-react';
 
-// ── Stock Control ─────────────────────────────────────────────────
-function StockControl({ product, onQuantityChange }) {
-  const { getToken } = useAuth();
-  const invRecord = product.inventory?.[0];
-  const lowStockThreshold = invRecord?.lowStock ?? 10;
-
-  const [qty, setQty] = useState(product.quantity ?? 0);
+// ── Inline variant price editor ───────────────────────────────────
+function VariantPriceEdit({ variant, onSave }) {
   const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(variant.price);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const inputRef = useRef(null);
-  const saveTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    setQty(product.quantity ?? 0);
-  }, [product.quantity]);
-
-  const saveQuantity = useCallback(
-    async (newQty) => {
-      const clamped = Math.max(0, Number(newQty));
-      if (clamped === (product.quantity ?? 0) && !editing) return;
-      try {
-        setSaving(true);
-        const token = await getToken();
-        const { data } = await axios.put(
-          '/api/inventory/update',
-          { productId: product.id, quantity: clamped },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        setQty(data.quantity);
-        onQuantityChange(product.id, data.quantity, data.inStock);
-        setSaved(true);
-        saveTimeoutRef.current = setTimeout(() => setSaved(false), 1500);
-      } catch (error) {
-        toast.error(error?.response?.data?.error || 'Failed to update stock');
-        setQty(product.quantity ?? 0);
-      } finally {
-        setSaving(false);
-        setEditing(false);
-      }
-    },
-    [getToken, product.id, product.quantity, onQuantityChange, editing]
-  );
-
-  const handleMinus = () => {
-    const n = Math.max(0, qty - 1);
-    setQty(n);
-    saveQuantity(n);
-  };
-  const handlePlus = () => {
-    const n = qty + 1;
-    setQty(n);
-    saveQuantity(n);
-  };
-  const handleClick = () => {
-    setEditing(true);
-    setTimeout(() => inputRef.current?.select(), 0);
-  };
-  const handleBlur = () => saveQuantity(qty);
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') inputRef.current?.blur();
-    if (e.key === 'Escape') {
-      setQty(product.quantity ?? 0);
-      setEditing(false);
+  const save = async () => {
+    const num = Number(val);
+    if (!num || num <= 0) {
+      toast.error('Enter a valid price');
+      return;
     }
-  };
-  const handleInputChange = (e) => {
-    const v = e.target.value;
-    if (v === '' || /^\d+$/.test(v)) setQty(v === '' ? 0 : Number(v));
+    if (num === variant.price) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    await onSave(variant.id, { price: num });
+    setSaving(false);
+    setEditing(false);
   };
 
-  const isLow = qty > 0 && qty < lowStockThreshold;
-  const isOut = qty === 0;
-
-  return (
-    <div className="flex flex-col gap-1">
+  if (editing) {
+    return (
       <div className="flex items-center gap-1">
+        <span className="text-slate-400 text-sm">₹</span>
+        <input
+          type="number"
+          min="0"
+          autoFocus
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          className="w-20 px-2 py-1 text-sm border border-indigo-400 rounded-md outline-none ring-2 ring-indigo-100 bg-white"
+        />
         <button
-          onClick={handleMinus}
-          disabled={saving || qty <= 0}
-          className="w-7 h-7 flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        >
-          <Minus size={12} />
-        </button>
-
-        {editing ? (
-          <input
-            ref={inputRef}
-            type="number"
-            min="0"
-            value={qty}
-            onChange={handleInputChange}
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-            className="w-14 h-7 text-center text-sm font-semibold text-slate-700 border border-indigo-400 rounded-md outline-none ring-2 ring-indigo-100 bg-white [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-          />
-        ) : (
-          <button
-            onClick={handleClick}
-            title="Click to edit stock"
-            className="w-14 h-7 text-center text-sm font-semibold text-slate-700 border border-slate-200 rounded-md hover:border-indigo-300 hover:bg-indigo-50 transition-colors cursor-text"
-          >
-            {saving ? (
-              <Loader2 size={12} className="animate-spin mx-auto text-indigo-400" />
-            ) : saved ? (
-              <Check size={12} className="mx-auto text-green-500" />
-            ) : (
-              qty
-            )}
-          </button>
-        )}
-
-        <button
-          onClick={handlePlus}
+          onClick={save}
           disabled={saving}
-          className="w-7 h-7 flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:border-green-300 hover:text-green-600 hover:bg-green-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          className="p-1 text-green-600 hover:bg-green-50 rounded"
         >
-          <Plus size={12} />
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+        </button>
+        <button
+          onClick={() => {
+            setVal(variant.price);
+            setEditing(false);
+          }}
+          className="p-1 text-red-400 hover:bg-red-50 rounded"
+        >
+          <X size={12} />
         </button>
       </div>
+    );
+  }
 
-      {/* Low stock / out of stock warning */}
-      {/* {isOut && (
-        <span className="text-xs text-red-500 flex items-center gap-1">
-          <AlertCircle size={10} /> Out of stock
-        </span>
-      )}
-      {isLow && (
-        <span className="text-xs text-amber-500 flex items-center gap-1">
-          <AlertCircle size={10} /> Low stock
-        </span>
-      )} */}
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      className="text-sm font-semibold text-green-700 hover:underline hover:text-green-800 transition-colors"
+    >
+      ₹{Number(variant.price).toLocaleString('en-IN')}
+    </button>
+  );
+}
+
+// ── Inline variant stock editor ───────────────────────────────────
+function VariantStockEdit({ variant, lowStockThreshold, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(variant.stock);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const num = Math.max(0, Number(val));
+    if (num === variant.stock) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    await onSave(variant.id, { stock: num });
+    setSaving(false);
+    setEditing(false);
+  };
+
+  const isLow = val > 0 && val < lowStockThreshold;
+  const isOut = val === 0;
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          min="0"
+          autoFocus
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') setEditing(false);
+          }}
+          className="w-16 px-2 py-1 text-sm border border-indigo-400 rounded-md outline-none ring-2 ring-indigo-100 bg-white"
+        />
+        <button
+          onClick={save}
+          disabled={saving}
+          className="p-1 text-green-600 hover:bg-green-50 rounded"
+        >
+          {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+        </button>
+        <button
+          onClick={() => {
+            setVal(variant.stock);
+            setEditing(false);
+          }}
+          className="p-1 text-red-400 hover:bg-red-50 rounded"
+        >
+          <X size={12} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={() => setEditing(true)}
+        className={`text-sm font-semibold hover:underline transition-colors ${isOut ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-slate-700'}`}
+      >
+        {val}
+      </button>
+      {isOut && <AlertCircle size={12} className="text-red-500" title="Out of stock" />}
+      {isLow && <AlertCircle size={12} className="text-amber-500" title="Low stock" />}
     </div>
+  );
+}
+
+// ── Product row with expandable variants ─────────────────────────
+function ProductRow({ product, onDelete, onVariantUpdate, lowStockThreshold }) {
+  const [expanded, setExpanded] = useState(false);
+  const [variants, setVariants] = useState(product.variants || []);
+
+  const { getToken } = useAuth();
+
+  const handleVariantSave = async (variantId, updates) => {
+    try {
+      const token = await getToken();
+      const { data } = await axios.patch(`/api/store/product/variant?id=${variantId}`, updates, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setVariants((prev) => prev.map((v) => (v.id === variantId ? { ...v, ...data.variant } : v)));
+      onVariantUpdate(product.id, data.variant);
+      toast.success('Variant updated');
+    } catch (error) {
+      toast.error(error?.response?.data?.error || 'Failed to update variant');
+    }
+  };
+
+  const totalStock = variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+  const hasLowStock = variants.some((v) => v.stock > 0 && v.stock < lowStockThreshold);
+  const hasOutOfStock = variants.some((v) => v.stock === 0);
+
+  return (
+    <>
+      {/* Main product row */}
+      <tr className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
+        {/* Product name + image */}
+        <td className="px-5 py-4">
+          <div className="flex items-center gap-3">
+            {product.images?.[0] && (
+              <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100 flex-shrink-0">
+                <Image src={product.images[0]} alt={product.name} fill className="object-cover" />
+              </div>
+            )}
+            <div>
+              <span className="font-medium text-slate-800 line-clamp-1 max-w-[140px] block">
+                {product.name}
+              </span>
+              {variants.length > 0 && (
+                <span className="text-xs text-slate-400">
+                  {variants.length} variant{variants.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        </td>
+
+        {/* MRP */}
+        <td className="px-5 py-4 text-slate-500 text-sm">₹{product.mrp.toLocaleString('en-IN')}</td>
+
+        {/* Total Stock */}
+        <td className="px-5 py-4">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`text-sm font-semibold ${totalStock === 0 ? 'text-red-600' : hasLowStock ? 'text-amber-600' : 'text-slate-700'}`}
+            >
+              {totalStock}
+            </span>
+            {hasOutOfStock && (
+              <span className="text-xs text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">Out</span>
+            )}
+            {!hasOutOfStock && hasLowStock && (
+              <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                Low
+              </span>
+            )}
+          </div>
+        </td>
+
+        {/* Status */}
+        <td className="px-5 py-4">
+          <span
+            className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${product.inStock ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full mr-1.5 ${product.inStock ? 'bg-green-500' : 'bg-red-500'}`}
+            />
+            {product.inStock ? 'Active' : 'Inactive'}
+          </span>
+        </td>
+
+        {/* Actions */}
+        <td className="px-5 py-4">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-xs font-medium transition-colors"
+            >
+              <Layers size={12} />
+              Variants
+              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </button>
+            <button
+              onClick={() => onDelete(product)}
+              className="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      {/* Expanded variants panel */}
+      {expanded && (
+        <tr className="bg-indigo-50/30">
+          <td colSpan={5} className="px-5 py-3">
+            {variants.length === 0 ? (
+              <div className="flex items-center gap-2 text-slate-400 text-sm py-2">
+                <Layers size={14} />
+                No variants found. Edit the product to add size variants.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-indigo-100 bg-white overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-indigo-50 border-b border-indigo-100">
+                      <th className="text-left px-4 py-2.5 font-semibold text-indigo-700 text-xs uppercase">
+                        Size
+                      </th>
+                      <th className="text-left px-4 py-2.5 font-semibold text-indigo-700 text-xs uppercase">
+                        Price
+                      </th>
+                      <th className="text-left px-4 py-2.5 font-semibold text-indigo-700 text-xs uppercase">
+                        Stock
+                      </th>
+                      <th className="text-left px-4 py-2.5 font-semibold text-indigo-700 text-xs uppercase hidden sm:table-cell">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {variants.map((v, idx) => (
+                      <tr
+                        key={v.id}
+                        className={`border-b border-slate-50 ${idx === variants.length - 1 ? 'border-b-0' : ''}`}
+                      >
+                        <td className="px-4 py-2.5">
+                          <span className="inline-flex items-center justify-center w-9 h-7 bg-indigo-600 text-white rounded-md text-xs font-bold">
+                            {v.size}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <VariantPriceEdit variant={v} onSave={handleVariantSave} />
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <VariantStockEdit
+                            variant={v}
+                            lowStockThreshold={lowStockThreshold}
+                            onSave={handleVariantSave}
+                          />
+                        </td>
+                        <td className="px-4 py-2.5 hidden sm:table-cell">
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${v.stock === 0 ? 'bg-red-50 text-red-600' : v.stock < lowStockThreshold ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}
+                          >
+                            {v.stock === 0
+                              ? 'Out of stock'
+                              : v.stock < lowStockThreshold
+                                ? 'Low stock'
+                                : 'In stock'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                  <p className="text-xs text-slate-400">
+                    Click price or stock to edit inline. Barcode is hidden for security.
+                  </p>
+                  <button
+                    onClick={() => (window.location.href = `/store/add-product?id=${product.id}`)}
+                    className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+                  >
+                    <Pencil size={11} /> Edit All Variants
+                  </button>
+                </div>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
@@ -167,6 +360,7 @@ export default function ManageProductPage() {
     productName: '',
   });
   const [deleting, setDeleting] = useState(false);
+  const lowStockThreshold = 5;
 
   const fetchProducts = async () => {
     try {
@@ -187,9 +381,16 @@ export default function ManageProductPage() {
     fetchProducts();
   }, []);
 
-  const handleQuantityChange = useCallback((productId, newQty, newInStock) => {
+  const handleVariantUpdate = useCallback((productId, updatedVariant) => {
     setProducts((prev) =>
-      prev.map((p) => (p.id === productId ? { ...p, quantity: newQty, inStock: newInStock } : p))
+      prev.map((p) => {
+        if (p.id !== productId) return p;
+        const updatedVariants = (p.variants || []).map((v) =>
+          v.id === updatedVariant.id ? { ...v, ...updatedVariant } : v
+        );
+        const totalStock = updatedVariants.reduce((s, v) => s + (v.stock || 0), 0);
+        return { ...p, variants: updatedVariants, inStock: totalStock > 0 };
+      })
     );
   }, []);
 
@@ -206,10 +407,10 @@ export default function ManageProductPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setProducts((prev) => prev.filter((p) => p.id !== deleteConfirm.productId));
-      toast.success('Product deleted successfully');
+      toast.success('Product deleted');
       closeDeleteConfirm();
     } catch (error) {
-      toast.error(error?.response?.data?.error || 'Failed to delete product');
+      toast.error(error?.response?.data?.error || 'Failed to delete');
     } finally {
       setDeleting(false);
     }
@@ -222,7 +423,7 @@ export default function ManageProductPage() {
           <div>
             <h1 className="text-2xl font-semibold text-slate-800">Manage Products</h1>
             <p className="text-slate-500 mt-1 text-sm">
-              View, edit, or remove your listed products
+              Expand a product to view and edit its size variants
             </p>
           </div>
           <span className="text-sm text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-full">
@@ -248,82 +449,21 @@ export default function ManageProductPage() {
                 <thead>
                   <tr className="border-b border-slate-100 bg-slate-50">
                     <th className="text-left px-5 py-4 font-medium text-slate-500">Product</th>
-                    <th className="text-left px-5 py-4 font-medium text-slate-500 hidden md:table-cell">
-                      Description
-                    </th>
                     <th className="text-left px-5 py-4 font-medium text-slate-500">MRP</th>
-                    <th className="text-left px-5 py-4 font-medium text-slate-500">Price</th>
-                    <th className="text-left px-5 py-4 font-medium text-slate-500 hidden sm:table-cell">
-                      Stock
-                    </th>
+                    <th className="text-left px-5 py-4 font-medium text-slate-500">Total Stock</th>
                     <th className="text-left px-5 py-4 font-medium text-slate-500">Status</th>
-                    <th className="text-center px-5 py-4 font-medium text-slate-500">Actions</th>
+                    <th className="text-left px-5 py-4 font-medium text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((product, idx) => (
-                    <tr
+                  {products.map((product) => (
+                    <ProductRow
                       key={product.id}
-                      className={`border-b border-slate-50 hover:bg-slate-50/70 transition-colors ${idx === products.length - 1 ? 'border-b-0' : ''}`}
-                    >
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          {product.images?.[0] && (
-                            <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100 flex-shrink-0">
-                              <Image
-                                src={product.images[0]}
-                                alt={product.name}
-                                fill
-                                className="object-cover"
-                              />
-                            </div>
-                          )}
-                          <span className="font-medium text-slate-800 line-clamp-1 max-w-[140px]">
-                            {product.name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 hidden md:table-cell">
-                        <p className="text-slate-500 line-clamp-2 max-w-[200px]">
-                          {product.description}
-                        </p>
-                      </td>
-                      <td className="px-5 py-4 text-slate-500">
-                        ₹{product.mrp.toLocaleString('en-IN')}
-                      </td>
-                      <td className="px-5 py-4 text-green-600 font-medium">
-                        ₹{product.price.toLocaleString('en-IN')}
-                      </td>
-                      <td className="px-5 py-4 hidden sm:table-cell">
-                        <StockControl product={product} onQuantityChange={handleQuantityChange} />
-                      </td>
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${product.inStock ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full mr-1.5 ${product.inStock ? 'bg-green-500' : 'bg-red-500'}`}
-                          />
-                          {product.inStock ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => router.push(`/store/add-product?id=${product.id}`)}
-                            className="p-2 rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button
-                            onClick={() => openDeleteConfirm(product)}
-                            className="p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      product={product}
+                      onDelete={openDeleteConfirm}
+                      onVariantUpdate={handleVariantUpdate}
+                      lowStockThreshold={lowStockThreshold}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -332,6 +472,7 @@ export default function ManageProductPage() {
         </div>
       </div>
 
+      {/* Delete confirm modal */}
       {deleteConfirm.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
@@ -348,7 +489,7 @@ export default function ManageProductPage() {
                 <p className="text-slate-500 mt-1 text-sm">
                   Are you sure you want to delete{' '}
                   <span className="font-medium text-slate-700">"{deleteConfirm.productName}"</span>?
-                  This action cannot be undone.
+                  All variants will also be deleted. This cannot be undone.
                 </p>
               </div>
             </div>
@@ -367,11 +508,13 @@ export default function ManageProductPage() {
               >
                 {deleting ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" /> Deleting...
+                    <Loader2 size={16} className="animate-spin" />
+                    Deleting...
                   </>
                 ) : (
                   <>
-                    <Trash2 size={16} /> Yes, Delete
+                    <Trash2 size={16} />
+                    Yes, Delete
                   </>
                 )}
               </button>

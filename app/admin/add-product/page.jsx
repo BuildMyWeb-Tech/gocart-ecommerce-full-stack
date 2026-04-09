@@ -16,13 +16,18 @@ import {
   X,
   PlusCircle,
   Loader2,
-  Hash,
   Pencil,
   Zap,
   Plus,
   Trash2,
   Globe,
+  Layers,
+  Barcode,
+  Hash,
 } from 'lucide-react';
+
+const ALL_SIZES = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+const emptyVariant = (size) => ({ size, barcode: '', price: '', stock: '' });
 
 export default function AdminAddProductPage() {
   const { getToken } = useAuth();
@@ -41,16 +46,16 @@ export default function AdminAddProductPage() {
   const [existingImages, setExistingImages] = useState([]);
   const [keyFeatures, setKeyFeatures] = useState(['']);
 
+  const [selectedSizes, setSelectedSizes] = useState([]);
+  const [variants, setVariants] = useState({});
+
   const [productInfo, setProductInfo] = useState({
     name: '',
     description: '',
     mrp: '',
-    price: '',
-    quantity: '',
     selectedCategories: [],
   });
 
-  // ── Fetch ALL categories (admin + store) ──────────────────────
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -68,14 +73,12 @@ export default function AdminAddProductPage() {
     fetchCategories();
   }, []);
 
-  // ── Fetch product for edit mode ───────────────────────────────
   useEffect(() => {
     if (!isEditMode) return;
     const fetchProduct = async () => {
       try {
         setPageLoading(true);
         const token = await getToken();
-        // Admin products are fetched via /api/products
         const { data } = await axios.get('/api/products', {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -89,8 +92,6 @@ export default function AdminAddProductPage() {
           name: product.name,
           description: product.description,
           mrp: product.mrp,
-          price: product.price,
-          quantity: product.quantity,
           selectedCategories: product.category || [],
         });
         setExistingImages(product.images || []);
@@ -99,6 +100,21 @@ export default function AdminAddProductPage() {
             ? product.keyFeatures
             : ['']
         );
+        if (product.variants && product.variants.length > 0) {
+          const sizes = product.variants.map((v) => v.size);
+          const variantMap = {};
+          product.variants.forEach((v) => {
+            variantMap[v.size] = {
+              id: v.id,
+              size: v.size,
+              barcode: v.barcode,
+              price: v.price,
+              stock: v.stock,
+            };
+          });
+          setSelectedSizes(sizes);
+          setVariants(variantMap);
+        }
       } catch {
         toast.error('Failed to load product');
       } finally {
@@ -108,19 +124,24 @@ export default function AdminAddProductPage() {
     fetchProduct();
   }, [isEditMode, editId]);
 
-  const onChangeHandler = (e) =>
-    setProductInfo({ ...productInfo, [e.target.name]: e.target.value });
-
-  const toggleCategory = (categoryName) => {
-    setProductInfo((prev) => {
-      const already = prev.selectedCategories.includes(categoryName);
-      return {
-        ...prev,
-        selectedCategories: already
-          ? prev.selectedCategories.filter((c) => c !== categoryName)
-          : [...prev.selectedCategories, categoryName],
-      };
+  const toggleSize = (size) => {
+    setSelectedSizes((prev) => {
+      if (prev.includes(size)) {
+        setVariants((v) => {
+          const copy = { ...v };
+          delete copy[size];
+          return copy;
+        });
+        return prev.filter((s) => s !== size);
+      } else {
+        setVariants((v) => ({ ...v, [size]: emptyVariant(size) }));
+        return [...prev, size];
+      }
     });
+  };
+
+  const updateVariant = (size, field, value) => {
+    setVariants((prev) => ({ ...prev, [size]: { ...prev[size], [field]: value } }));
   };
 
   const handleImageChange = (e) => {
@@ -146,6 +167,41 @@ export default function AdminAddProductPage() {
     setKeyFeatures((prev) => prev.map((f, i) => (i === index ? value : f)));
   const removeFeature = (index) => setKeyFeatures((prev) => prev.filter((_, i) => i !== index));
 
+  const toggleCategory = (categoryName) => {
+    setProductInfo((prev) => {
+      const already = prev.selectedCategories.includes(categoryName);
+      return {
+        ...prev,
+        selectedCategories: already
+          ? prev.selectedCategories.filter((c) => c !== categoryName)
+          : [...prev.selectedCategories, categoryName],
+      };
+    });
+  };
+
+  const validateVariants = () => {
+    if (selectedSizes.length === 0) {
+      toast.error('Please select at least one size');
+      return false;
+    }
+    for (const size of selectedSizes) {
+      const v = variants[size];
+      if (!v?.barcode?.trim()) {
+        toast.error(`Please enter barcode for size ${size}`);
+        return false;
+      }
+      if (!v?.price || Number(v.price) <= 0) {
+        toast.error(`Please enter a valid price for size ${size}`);
+        return false;
+      }
+      if (v?.stock === '' || v?.stock === undefined || Number(v.stock) < 0) {
+        toast.error(`Please enter stock for size ${size}`);
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -158,46 +214,43 @@ export default function AdminAddProductPage() {
       toast.error('Please select at least one category');
       return;
     }
+    if (!validateVariants()) return;
 
     const cleanedFeatures = keyFeatures.filter((f) => f.trim() !== '');
+    const variantList = selectedSizes.map((size) => ({
+      ...variants[size],
+      price: Number(variants[size].price),
+      stock: Number(variants[size].stock),
+    }));
 
     try {
       setLoading(true);
       const token = await getToken();
 
       if (isEditMode) {
-        // PUT /api/products?id=xxx — admin can edit any product
         await axios.put(
           `/api/products?id=${editId}`,
           {
             name: productInfo.name,
             description: productInfo.description,
             mrp: Number(productInfo.mrp),
-            price: Number(productInfo.price),
-            quantity: Number(productInfo.quantity) || 0,
             category: productInfo.selectedCategories,
             existingImages,
             keyFeatures: cleanedFeatures,
+            variants: variantList,
           },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
+          { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
         );
         toast.success('Product updated successfully');
         router.push('/admin/manage-product');
       } else {
-        // POST /api/products — admin global product
         const formData = new FormData();
         formData.append('name', productInfo.name);
         formData.append('description', productInfo.description);
         formData.append('mrp', productInfo.mrp);
-        formData.append('price', productInfo.price);
-        formData.append('quantity', productInfo.quantity || 0);
         formData.append('category', JSON.stringify(productInfo.selectedCategories));
         formData.append('keyFeatures', JSON.stringify(cleanedFeatures));
+        formData.append('variants', JSON.stringify(variantList));
         imageFiles.forEach((file) => formData.append('images', file));
 
         const { data } = await axios.post('/api/products', formData, {
@@ -205,19 +258,13 @@ export default function AdminAddProductPage() {
         });
 
         toast.success(data.message || 'Global product created successfully');
-
-        setProductInfo({
-          name: '',
-          description: '',
-          mrp: '',
-          price: '',
-          quantity: '',
-          selectedCategories: [],
-        });
+        setProductInfo({ name: '', description: '', mrp: '', selectedCategories: [] });
         imagePreviews.forEach((url) => URL.revokeObjectURL(url));
         setImageFiles([]);
         setImagePreviews([]);
         setKeyFeatures(['']);
+        setSelectedSizes([]);
+        setVariants({});
       }
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message);
@@ -240,7 +287,6 @@ export default function AdminAddProductPage() {
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-3xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold text-slate-800 flex items-center gap-2">
             {isEditMode ? (
@@ -257,7 +303,7 @@ export default function AdminAddProductPage() {
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
             {isEditMode
-              ? 'Update the details below to edit this product'
+              ? 'Update product details and variants'
               : 'This product will be visible to all users globally'}
           </p>
         </div>
@@ -266,8 +312,8 @@ export default function AdminAddProductPage() {
           <div className="mb-6 flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg p-3 text-sm text-purple-700">
             <Globe size={16} className="text-purple-500 flex-shrink-0" />
             <p>
-              Products created here are <strong>global</strong> — visible to all users on the public
-              shop page, not tied to any store.
+              Products created here are <strong>global</strong> — visible to all users, not tied to
+              any store.
             </p>
           </div>
         )}
@@ -276,13 +322,12 @@ export default function AdminAddProductPage() {
           onSubmit={handleSubmit}
           className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-6"
         >
-          {/* ── Images ─────────────────────────────────────────── */}
+          {/* Images */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <UploadCloud size={16} className="text-indigo-500" />
               Product Images
             </p>
-
             {existingImages.length > 0 && (
               <div className="mb-3">
                 <p className="text-xs text-slate-400 mb-2">Current images</p>
@@ -311,7 +356,6 @@ export default function AdminAddProductPage() {
                 </div>
               </div>
             )}
-
             {imagePreviews.length > 0 && (
               <div className="mb-4">
                 {isEditMode && <p className="text-xs text-slate-400 mb-2">New images to add</p>}
@@ -340,7 +384,6 @@ export default function AdminAddProductPage() {
                 </div>
               </div>
             )}
-
             <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg p-6 cursor-pointer hover:border-green-300 hover:bg-green-50/30 transition-all">
               <UploadCloud size={28} className="text-slate-400 mb-2" />
               <span className="text-sm text-slate-500">
@@ -357,7 +400,7 @@ export default function AdminAddProductPage() {
             </label>
           </div>
 
-          {/* ── Product Name ──────────────────────────────────── */}
+          {/* Name */}
           <label className="flex flex-col gap-2">
             <span className="font-medium text-slate-700 flex items-center gap-2">
               <ShoppingBag size={16} className="text-purple-500" />
@@ -365,25 +408,23 @@ export default function AdminAddProductPage() {
             </span>
             <input
               type="text"
-              name="name"
               value={productInfo.name}
-              onChange={onChangeHandler}
+              onChange={(e) => setProductInfo({ ...productInfo, name: e.target.value })}
               placeholder="Enter product name"
               required
               className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50 placeholder:text-slate-400"
             />
           </label>
 
-          {/* ── Description ──────────────────────────────────── */}
+          {/* Description */}
           <label className="flex flex-col gap-2">
             <span className="font-medium text-slate-700 flex items-center gap-2">
               <Tag size={16} className="text-amber-500" />
               Description
             </span>
             <textarea
-              name="description"
               value={productInfo.description}
-              onChange={onChangeHandler}
+              onChange={(e) => setProductInfo({ ...productInfo, description: e.target.value })}
               placeholder="Describe your product"
               rows={4}
               required
@@ -391,76 +432,134 @@ export default function AdminAddProductPage() {
             />
           </label>
 
-          {/* ── Prices + Stock ─────────────────────────────────── */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <label className="flex flex-col gap-2 flex-1">
-              <span className="font-medium text-slate-700 flex items-center gap-2">
-                <IndianRupee size={16} className="text-red-500" />
-                Actual Price (MRP)
-              </span>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  name="mrp"
-                  value={productInfo.mrp}
-                  onChange={onChangeHandler}
-                  placeholder="0.00"
-                  min="0"
-                  required
-                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50"
-                />
-              </div>
-            </label>
-            <label className="flex flex-col gap-2 flex-1">
-              <span className="font-medium text-slate-700 flex items-center gap-2">
-                <IndianRupee size={16} className="text-green-500" />
-                Offer Price
-              </span>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  name="price"
-                  value={productInfo.price}
-                  onChange={onChangeHandler}
-                  placeholder="0.00"
-                  min="0"
-                  required
-                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50"
-                />
-              </div>
-            </label>
-            <label className="flex flex-col gap-2 flex-1">
-              <span className="font-medium text-slate-700 flex items-center gap-2">
-                <Hash size={16} className="text-blue-500" />
-                Stock Quantity
+          {/* MRP */}
+          <label className="flex flex-col gap-2 max-w-xs">
+            <span className="font-medium text-slate-700 flex items-center gap-2">
+              <IndianRupee size={16} className="text-red-500" />
+              MRP (Display Price)
+            </span>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                ₹
               </span>
               <input
                 type="number"
-                name="quantity"
-                value={productInfo.quantity}
-                onChange={onChangeHandler}
-                placeholder="0"
+                value={productInfo.mrp}
+                onChange={(e) => setProductInfo({ ...productInfo, mrp: e.target.value })}
+                placeholder="0.00"
                 min="0"
                 required
-                className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50"
+                className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-100 bg-slate-50"
               />
-            </label>
+            </div>
+          </label>
+
+          {/* Sizes & Variants */}
+          <div>
+            <p className="font-medium text-slate-700 flex items-center gap-2 mb-1">
+              <Layers size={16} className="text-green-600" />
+              Sizes &amp; Variants
+              <span className="text-xs text-slate-400 font-normal">
+                (select sizes, fill barcode / price / stock)
+              </span>
+            </p>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {ALL_SIZES.map((size) => {
+                const active = selectedSizes.includes(size);
+                return (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => toggleSize(size)}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${active ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-green-300 hover:text-green-600'}`}
+                  >
+                    {active && <span className="mr-1">✓</span>}
+                    {size}
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedSizes.length > 0 && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-[80px_1fr_1fr_1fr] gap-3 px-1">
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Size</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Barcode *</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">
+                    Price (₹) *
+                  </span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Stock *</span>
+                </div>
+                {selectedSizes.map((size) => (
+                  <div
+                    key={size}
+                    className="grid grid-cols-[80px_1fr_1fr_1fr] gap-3 items-center bg-green-50/40 border border-green-100 rounded-lg p-3"
+                  >
+                    <span className="inline-flex items-center justify-center w-12 h-8 bg-green-600 text-white rounded-lg text-sm font-bold">
+                      {size}
+                    </span>
+                    <div className="relative">
+                      <Barcode
+                        size={14}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        type="text"
+                        placeholder="e.g. 8901234567890"
+                        value={variants[size]?.barcode || ''}
+                        onChange={(e) => updateVariant(size, 'barcode', e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-green-100 bg-white placeholder:text-slate-300"
+                      />
+                    </div>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                        ₹
+                      </span>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        min="0"
+                        value={variants[size]?.price || ''}
+                        onChange={(e) => updateVariant(size, 'price', e.target.value)}
+                        className="w-full pl-7 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-green-100 bg-white placeholder:text-slate-300"
+                      />
+                    </div>
+                    <div className="relative">
+                      <Hash
+                        size={14}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
+                        type="number"
+                        placeholder="0"
+                        min="0"
+                        value={variants[size]?.stock === undefined ? '' : variants[size].stock}
+                        onChange={(e) => updateVariant(size, 'stock', e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-green-100 bg-white placeholder:text-slate-300"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-slate-400 mt-1">
+                  ✦ Each barcode must be unique across all products and variants.
+                </p>
+              </div>
+            )}
+
+            {selectedSizes.length === 0 && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-700">
+                <Layers size={14} className="flex-shrink-0" />
+                Select at least one size to add variant details.
+              </div>
+            )}
           </div>
 
-          {/* ── Key Features ─────────────────────────────────── */}
+          {/* Key Features */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <Zap size={16} className="text-yellow-500" />
               Key Features
-              <span className="text-xs text-slate-400 font-normal">
-                (optional — shown on product page)
-              </span>
+              <span className="text-xs text-slate-400 font-normal">(optional)</span>
             </p>
             <div className="space-y-2">
               {keyFeatures.map((feature, index) => (
@@ -497,7 +596,7 @@ export default function AdminAddProductPage() {
             </button>
           </div>
 
-          {/* ── Categories ───────────────────────────────────── */}
+          {/* Categories */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <Package size={16} className="text-blue-500" />
@@ -514,9 +613,7 @@ export default function AdminAddProductPage() {
                 Loading categories...
               </div>
             ) : categories.length === 0 ? (
-              <p className="text-sm text-red-500 bg-red-50 p-3 rounded-lg">
-                No categories found. Create categories first.
-              </p>
+              <p className="text-sm text-red-500 bg-red-50 p-3 rounded-lg">No categories found.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {categories.map((cat) => {
@@ -526,11 +623,7 @@ export default function AdminAddProductPage() {
                       key={cat.id}
                       type="button"
                       onClick={() => toggleCategory(cat.name)}
-                      className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${
-                        isSelected
-                          ? 'bg-green-600 text-white border-green-600 shadow-sm'
-                          : 'bg-white text-slate-600 border-slate-200 hover:border-green-300 hover:text-green-600'
-                      }`}
+                      className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${isSelected ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-green-300 hover:text-green-600'}`}
                     >
                       {isSelected && <span className="mr-1">✓</span>}
                       {cat.name}
@@ -539,14 +632,9 @@ export default function AdminAddProductPage() {
                 })}
               </div>
             )}
-            {productInfo.selectedCategories.length > 0 && (
-              <p className="text-xs text-slate-500 mt-2">
-                Selected: {productInfo.selectedCategories.join(', ')}
-              </p>
-            )}
           </div>
 
-          {/* ── Submit ─────────────────────────────────────────── */}
+          {/* Submit */}
           <div className="flex justify-end gap-3 pt-2">
             {isEditMode && (
               <button
