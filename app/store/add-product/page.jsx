@@ -16,12 +16,20 @@ import {
   X,
   PlusCircle,
   Loader2,
-  Hash,
   Pencil,
   Zap,
   Plus,
   Trash2,
+  Layers,
+  Barcode,
+  Hash,
 } from 'lucide-react';
+
+// ── Available sizes ───────────────────────────────────────────────
+const ALL_SIZES = ['S', 'M', 'L', 'XL', 'XXL', 'XXXL'];
+
+// ── Default variant row ───────────────────────────────────────────
+const emptyVariant = (size) => ({ size, barcode: '', price: '', stock: '' });
 
 export default function AddProductPage() {
   const { getToken } = useAuth();
@@ -38,21 +46,20 @@ export default function AddProductPage() {
   const [imagePreviews, setImagePreviews] = useState([]);
   const [imageFiles, setImageFiles] = useState([]);
   const [existingImages, setExistingImages] = useState([]);
-
-  // Key features: array of strings, start with one empty field
   const [keyFeatures, setKeyFeatures] = useState(['']);
+
+  // ── Variant state ─────────────────────────────────────────────
+  const [selectedSizes, setSelectedSizes] = useState([]);   // ['S','M','XL']
+  const [variants, setVariants] = useState({});              // { S: {barcode,price,stock}, ... }
 
   const [productInfo, setProductInfo] = useState({
     name: '',
     description: '',
     mrp: '',
-    price: '',
-    quantity: '',
     selectedCategories: [],
   });
 
-  // ── Fetch categories ──────────────────────────────────────────────
-  // ── Fetch categories (with auth so store gets global + their own) ─
+  // ── Fetch categories ──────────────────────────────────────────
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -70,7 +77,7 @@ export default function AddProductPage() {
     fetchCategories();
   }, []);
 
-  // ── Fetch product for edit mode ───────────────────────────────────
+  // ── Fetch product for edit mode ───────────────────────────────
   useEffect(() => {
     if (!isEditMode) return;
     const fetchProduct = async () => {
@@ -90,17 +97,30 @@ export default function AddProductPage() {
           name: product.name,
           description: product.description,
           mrp: product.mrp,
-          price: product.price,
-          quantity: product.quantity,
           selectedCategories: product.category || [],
         });
         setExistingImages(product.images || []);
-        // keyFeatures stored as String[] in DB
         setKeyFeatures(
           Array.isArray(product.keyFeatures) && product.keyFeatures.length > 0
             ? product.keyFeatures
             : ['']
         );
+        // Load existing variants
+        if (product.variants && product.variants.length > 0) {
+          const sizes = product.variants.map((v) => v.size);
+          const variantMap = {};
+          product.variants.forEach((v) => {
+            variantMap[v.size] = {
+              id: v.id,
+              size: v.size,
+              barcode: v.barcode,
+              price: v.price,
+              stock: v.stock,
+            };
+          });
+          setSelectedSizes(sizes);
+          setVariants(variantMap);
+        }
       } catch {
         toast.error('Failed to load product');
       } finally {
@@ -110,22 +130,32 @@ export default function AddProductPage() {
     fetchProduct();
   }, [isEditMode, editId]);
 
-  // ── Handlers ─────────────────────────────────────────────────────
-  const onChangeHandler = (e) =>
-    setProductInfo({ ...productInfo, [e.target.name]: e.target.value });
-
-  const toggleCategory = (categoryName) => {
-    setProductInfo((prev) => {
-      const already = prev.selectedCategories.includes(categoryName);
-      return {
-        ...prev,
-        selectedCategories: already
-          ? prev.selectedCategories.filter((c) => c !== categoryName)
-          : [...prev.selectedCategories, categoryName],
-      };
+  // ── Size toggle ───────────────────────────────────────────────
+  const toggleSize = (size) => {
+    setSelectedSizes((prev) => {
+      if (prev.includes(size)) {
+        // Remove size → remove variant data too
+        setVariants((v) => {
+          const copy = { ...v };
+          delete copy[size];
+          return copy;
+        });
+        return prev.filter((s) => s !== size);
+      } else {
+        setVariants((v) => ({ ...v, [size]: emptyVariant(size) }));
+        return [...prev, size];
+      }
     });
   };
 
+  const updateVariant = (size, field, value) => {
+    setVariants((prev) => ({
+      ...prev,
+      [size]: { ...prev[size], [field]: value },
+    }));
+  };
+
+  // ── Image handlers ────────────────────────────────────────────
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -144,15 +174,49 @@ export default function AddProductPage() {
   const removeExistingImage = (index) =>
     setExistingImages((prev) => prev.filter((_, i) => i !== index));
 
-  // ── Key Features ─────────────────────────────────────────────────
+  // ── Key Features ─────────────────────────────────────────────
   const addFeatureField = () => setKeyFeatures((prev) => [...prev, '']);
-
   const updateFeature = (index, value) =>
     setKeyFeatures((prev) => prev.map((f, i) => (i === index ? value : f)));
-
   const removeFeature = (index) => setKeyFeatures((prev) => prev.filter((_, i) => i !== index));
 
-  // ── Submit ────────────────────────────────────────────────────────
+  const toggleCategory = (categoryName) => {
+    setProductInfo((prev) => {
+      const already = prev.selectedCategories.includes(categoryName);
+      return {
+        ...prev,
+        selectedCategories: already
+          ? prev.selectedCategories.filter((c) => c !== categoryName)
+          : [...prev.selectedCategories, categoryName],
+      };
+    });
+  };
+
+  // ── Validation ────────────────────────────────────────────────
+  const validateVariants = () => {
+    if (selectedSizes.length === 0) {
+      toast.error('Please select at least one size');
+      return false;
+    }
+    for (const size of selectedSizes) {
+      const v = variants[size];
+      if (!v?.barcode?.trim()) {
+        toast.error(`Please enter barcode for size ${size}`);
+        return false;
+      }
+      if (!v?.price || Number(v.price) <= 0) {
+        toast.error(`Please enter a valid price for size ${size}`);
+        return false;
+      }
+      if (v?.stock === '' || v?.stock === undefined || Number(v.stock) < 0) {
+        toast.error(`Please enter stock for size ${size}`);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // ── Submit ────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -165,8 +229,14 @@ export default function AddProductPage() {
       toast.error('Please select at least one category');
       return;
     }
+    if (!validateVariants()) return;
 
     const cleanedFeatures = keyFeatures.filter((f) => f.trim() !== '');
+    const variantList = selectedSizes.map((size) => ({
+      ...variants[size],
+      price: Number(variants[size].price),
+      stock: Number(variants[size].stock),
+    }));
 
     try {
       setLoading(true);
@@ -179,11 +249,10 @@ export default function AddProductPage() {
             name: productInfo.name,
             description: productInfo.description,
             mrp: Number(productInfo.mrp),
-            price: Number(productInfo.price),
-            quantity: Number(productInfo.quantity) || 0,
             category: productInfo.selectedCategories,
             existingImages,
             keyFeatures: cleanedFeatures,
+            variants: variantList,
           },
           {
             headers: {
@@ -199,10 +268,9 @@ export default function AddProductPage() {
         formData.append('name', productInfo.name);
         formData.append('description', productInfo.description);
         formData.append('mrp', productInfo.mrp);
-        formData.append('price', productInfo.price);
-        formData.append('quantity', productInfo.quantity || 0);
         formData.append('category', JSON.stringify(productInfo.selectedCategories));
         formData.append('keyFeatures', JSON.stringify(cleanedFeatures));
+        formData.append('variants', JSON.stringify(variantList));
         imageFiles.forEach((file) => formData.append('images', file));
 
         const { data } = await axios.post('/api/store/product', formData, {
@@ -211,18 +279,14 @@ export default function AddProductPage() {
 
         toast.success(data.message || 'Product added successfully');
 
-        setProductInfo({
-          name: '',
-          description: '',
-          mrp: '',
-          price: '',
-          quantity: '',
-          selectedCategories: [],
-        });
+        // Reset form
+        setProductInfo({ name: '', description: '', mrp: '', selectedCategories: [] });
         imagePreviews.forEach((url) => URL.revokeObjectURL(url));
         setImageFiles([]);
         setImagePreviews([]);
         setKeyFeatures(['']);
+        setSelectedSizes([]);
+        setVariants({});
       }
     } catch (error) {
       toast.error(error?.response?.data?.error || error.message);
@@ -262,8 +326,8 @@ export default function AddProductPage() {
           </h1>
           <p className="text-slate-500 mt-1 text-sm">
             {isEditMode
-              ? 'Update the details below to edit your product'
-              : 'Fill in the details below to list a new product'}
+              ? 'Update product details and variants'
+              : 'Fill in details and add size variants with barcodes'}
           </p>
         </div>
 
@@ -271,7 +335,7 @@ export default function AddProductPage() {
           onSubmit={handleSubmit}
           className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-6"
         >
-          {/* ── Images ───────────────────────────────────────────── */}
+          {/* ── Images ───────────────────────────────────────── */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <UploadCloud size={16} className="text-indigo-500" />
@@ -352,7 +416,7 @@ export default function AddProductPage() {
             </label>
           </div>
 
-          {/* ── Product Name ─────────────────────────────────────── */}
+          {/* ── Product Name ──────────────────────────────────── */}
           <label className="flex flex-col gap-2">
             <span className="font-medium text-slate-700 flex items-center gap-2">
               <ShoppingBag size={16} className="text-purple-500" />
@@ -362,100 +426,161 @@ export default function AddProductPage() {
               type="text"
               name="name"
               value={productInfo.name}
-              onChange={onChangeHandler}
+              onChange={(e) => setProductInfo({ ...productInfo, name: e.target.value })}
               placeholder="Enter product name"
               required
               className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50 placeholder:text-slate-400"
             />
           </label>
 
-          {/* ── Description ──────────────────────────────────────── */}
+          {/* ── Description ───────────────────────────────────── */}
           <label className="flex flex-col gap-2">
             <span className="font-medium text-slate-700 flex items-center gap-2">
               <Tag size={16} className="text-amber-500" />
               Description
             </span>
             <textarea
-              name="description"
               value={productInfo.description}
-              onChange={onChangeHandler}
+              onChange={(e) => setProductInfo({ ...productInfo, description: e.target.value })}
               placeholder="Describe your product"
               rows={4}
-              required
+              
               className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-100 bg-slate-50 placeholder:text-slate-400"
             />
           </label>
 
-          {/* ── Prices + Stock ────────────────────────────────────── */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <label className="flex flex-col gap-2 flex-1">
-              <span className="font-medium text-slate-700 flex items-center gap-2">
-                <IndianRupee size={16} className="text-red-500" />
-                Actual Price (MRP)
-              </span>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  name="mrp"
-                  value={productInfo.mrp}
-                  onChange={onChangeHandler}
-                  placeholder="0.00"
-                  min="0"
-                  required
-                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50"
-                />
-              </div>
-            </label>
-            <label className="flex flex-col gap-2 flex-1">
-              <span className="font-medium text-slate-700 flex items-center gap-2">
-                <IndianRupee size={16} className="text-green-500" />
-                Offer Price
-              </span>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  name="price"
-                  value={productInfo.price}
-                  onChange={onChangeHandler}
-                  placeholder="0.00"
-                  min="0"
-                  required
-                  className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50"
-                />
-              </div>
-            </label>
-            <label className="flex flex-col gap-2 flex-1">
-              <span className="font-medium text-slate-700 flex items-center gap-2">
-                <Hash size={16} className="text-blue-500" />
-                Stock Quantity
-              </span>
+          {/* ── MRP ───────────────────────────────────────────── */}
+          <label className="flex flex-col gap-2 max-w-xs">
+            <span className="font-medium text-slate-700 flex items-center gap-2">
+              <IndianRupee size={16} className="text-red-500" />
+              MRP (Display Price)
+              <span className="text-xs text-slate-400 font-normal">(base price shown on product page)</span>
+            </span>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">₹</span>
               <input
                 type="number"
-                name="quantity"
-                value={productInfo.quantity}
-                onChange={onChangeHandler}
-                placeholder="0"
+                value={productInfo.mrp}
+                onChange={(e) => setProductInfo({ ...productInfo, mrp: e.target.value })}
+                placeholder="0.00"
                 min="0"
                 required
-                className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50"
+                className="w-full p-3 pl-8 outline-none border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-100 bg-slate-50"
               />
-            </label>
+            </div>
+          </label>
+
+          {/* ── SIZE SELECTOR + VARIANT INPUTS ───────────────── */}
+          <div>
+            <p className="font-medium text-slate-700 flex items-center gap-2 mb-1">
+              <Layers size={16} className="text-indigo-500" />
+              Sizes &amp; Variants
+              <span className="text-xs text-slate-400 font-normal">(select sizes, then fill barcode / price / stock)</span>
+            </p>
+
+            {/* Size chips */}
+            <div className="flex flex-wrap gap-2 mb-4">
+              {ALL_SIZES.map((size) => {
+                const active = selectedSizes.includes(size);
+                return (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => toggleSize(size)}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold border transition-all ${
+                      active
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+                    }`}
+                  >
+                    {active && <span className="mr-1">✓</span>}
+                    {size}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Variant rows */}
+            {selectedSizes.length > 0 && (
+              <div className="space-y-3">
+                {/* Header row */}
+                <div className="grid grid-cols-[80px_1fr_1fr_1fr] gap-3 px-1">
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Size</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Barcode *</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Price (₹) *</span>
+                  <span className="text-xs font-semibold text-slate-500 uppercase">Stock *</span>
+                </div>
+
+                {selectedSizes.map((size) => (
+                  <div
+                    key={size}
+                    className="grid grid-cols-[80px_1fr_1fr_1fr] gap-3 items-center bg-indigo-50/40 border border-indigo-100 rounded-lg p-3"
+                  >
+                    {/* Size badge */}
+                    <span className="inline-flex items-center justify-center w-12 h-8 bg-indigo-600 text-white rounded-lg text-sm font-bold">
+                      {size}
+                    </span>
+
+                    {/* Barcode */}
+                    <div className="relative">
+                      <Barcode size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="e.g. 8901234567890"
+                        value={variants[size]?.barcode || ''}
+                        onChange={(e) => updateVariant(size, 'barcode', e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white placeholder:text-slate-300"
+                      />
+                    </div>
+
+                    {/* Price */}
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
+                      <input
+                        type="number"
+                        placeholder="0.00"
+                        min="0"
+                        value={variants[size]?.price || ''}
+                        onChange={(e) => updateVariant(size, 'price', e.target.value)}
+                        className="w-full pl-7 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white placeholder:text-slate-300"
+                      />
+                    </div>
+
+                    {/* Stock */}
+                    <div className="relative">
+                      <Hash size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="number"
+                        placeholder="0"
+                        min="0"
+                        value={variants[size]?.stock === undefined ? '' : variants[size].stock}
+                        onChange={(e) => updateVariant(size, 'stock', e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white placeholder:text-slate-300"
+                      />
+                    </div>
+                  </div>
+                ))}
+
+                <p className="text-xs text-slate-400 mt-1">
+                  ✦ Each barcode must be unique across all products and variants.
+                </p>
+              </div>
+            )}
+
+            {selectedSizes.length === 0 && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg p-3 text-sm text-amber-700">
+                <Layers size={14} className="flex-shrink-0" />
+                Select at least one size to add variant details.
+              </div>
+            )}
           </div>
 
-          {/* ── Key Features ─────────────────────────────────────── */}
+          {/* ── Key Features ──────────────────────────────────── */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <Zap size={16} className="text-yellow-500" />
               Key Features
-              <span className="text-xs text-slate-400 font-normal">
-                (optional — shown on product page)
-              </span>
+              <span className="text-xs text-slate-400 font-normal">(optional)</span>
             </p>
             <div className="space-y-2">
               {keyFeatures.map((feature, index) => (
@@ -492,7 +617,7 @@ export default function AddProductPage() {
             </button>
           </div>
 
-          {/* ── Categories ────────────────────────────────────────── */}
+          {/* ── Categories ────────────────────────────────────── */}
           <div>
             <p className="font-medium text-slate-700 flex items-center gap-2 mb-3">
               <Package size={16} className="text-blue-500" />
@@ -534,14 +659,9 @@ export default function AddProductPage() {
                 })}
               </div>
             )}
-            {productInfo.selectedCategories.length > 0 && (
-              <p className="text-xs text-slate-500 mt-2">
-                Selected: {productInfo.selectedCategories.join(', ')}
-              </p>
-            )}
           </div>
 
-          {/* ── Submit ───────────────────────────────────────────── */}
+          {/* ── Submit ────────────────────────────────────────── */}
           <div className="flex justify-end gap-3 pt-2">
             {isEditMode && (
               <button

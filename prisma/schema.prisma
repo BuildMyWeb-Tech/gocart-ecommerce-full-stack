@@ -37,36 +37,57 @@ model Category {
 }
 
 model Product {
-  id          String      @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String
   mrp         Float
   price       Float
   images      String[]
   category    String[]
-  quantity    Int         @default(0)
-  inStock     Boolean     @default(true)
+  quantity    Int      @default(0)
+  inStock     Boolean  @default(true)
   storeId     String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  keyFeatures String[]    @default([])
-  createdBy   String      @default("STORE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  keyFeatures String[] @default([])
+  createdBy   String   @default("STORE")
 
   // ── POS / Billing fields ──────────────────────────────────────
-  barcode     String?     @unique
+  // NOTE: barcode is now on ProductVariant, not here
   sku         String?
 
   inventory   Inventory[]
   orderItems  OrderItem[]
   billItems   BillItem[]
+  variants    ProductVariant[]
   store       Store?      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   rating      Rating[]
 
   @@index([storeId])
   @@index([createdBy])
   @@index([inStock])
-  @@index([barcode])
   @@index([sku])
+}
+
+// ── Product Variants (size/barcode/price/stock per variant) ───────
+model ProductVariant {
+  id        String  @id @default(cuid())
+  productId String
+
+  size      String
+  price     Float
+  barcode   String  @unique
+  stock     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  billItems BillItem[]
+
+  @@index([productId])
+  @@index([barcode])
+  @@index([stock])
 }
 
 model Inventory {
@@ -229,17 +250,21 @@ model BillItem {
   id        String  @id @default(cuid())
   billId    String
   productId String
+  variantId String?   // ← nullable so old bills without variants still work
   name      String
+  size      String?   // ← variant size label (S, M, L, XL …)
   price     Float
   quantity  Int
   discount  Float   @default(0)
   total     Float
 
-  bill    Bill    @relation(fields: [billId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  bill      Bill           @relation(fields: [billId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id])
+  variant   ProductVariant? @relation(fields: [variantId], references: [id])
 
   @@index([billId])
   @@index([productId])
+  @@index([variantId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
