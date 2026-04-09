@@ -18,6 +18,17 @@
    📁 server
       📁 app
          📁 (public)
+            📁 create-store
+               📁 page
+                  📄 app-build-manifest.json
+                  📄 app-paths-manifest.json
+                  📄 build-manifest.json
+                  📄 next-font-manifest.json
+                  📄 react-loadable-manifest.json
+                  📄 server-reference-manifest.json
+               📄 page.js
+               📄 page.js.map
+               📄 page_client-reference-manifest.js
             📁 orders
                📁 page
                   📄 app-build-manifest.json
@@ -253,6 +264,15 @@
                📄 route_client-reference-manifest.js
             📁 store
                📁 billing
+                  📁 route
+                     📄 app-build-manifest.json
+                     📄 app-paths-manifest.json
+                     📄 build-manifest.json
+                     📄 server-reference-manifest.json
+                  📄 route.js
+                  📄 route.js.map
+                  📄 route_client-reference-manifest.js
+               📁 create
                   📁 route
                      📄 app-build-manifest.json
                      📄 app-paths-manifest.json
@@ -532,6 +552,7 @@
          📄 _ssgManifest.js
       📁 media
          📄 1b99372b3eaef0c8-s.p.758e15a8.woff2
+         📄 b2ea385cb5ae8625-s.866357a4.woff2
 
    📄 trace
    📁 types
@@ -641,8 +662,6 @@
          📁 timeline
             📄 route.js
       📁 products
-         📁 products
-            📄 route.js
          📄 route.js
       📁 rating
          📄 route.js
@@ -681,6 +700,8 @@
             📄 route.js
          📁 product
             📄 route.js
+            📁 variant
+               📄 route.js
          📁 stock-toggle
             📄 route.js
       📁 stripe
@@ -827,6 +848,8 @@
       📁 20260407081333_add_store_settings
          📄 migration.sql
       📁 20260407121038_add_billing_and_barcode
+         📄 migration.sql
+      📁 20260408171746_add_product_variants
          📄 migration.sql
       📄 migration_lock.toml
    📄 schema.prisma

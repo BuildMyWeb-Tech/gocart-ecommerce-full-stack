@@ -1,28 +1,17 @@
 'use client';
 /**
- * /app/employee/billing/page.jsx
- * ─────────────────────────────────────────────────────────────
- * Employee POS Billing — v5
+ * /app/employee/billing/page.jsx  — Feature 10 update
  *
- * ✅ All v4 features preserved (barcode, offline, IndexedDB, sync)
- * ✅ QZ TRAY THERMAL PRINT INTEGRATION (NEW)
- *    - Direct USB thermal print via QZ Tray (no browser dialog)
- *    - ESC/POS commands for 80mm paper
- *    - Auto-connect to QZ Tray on mount
- *    - Printer selector (lists all Windows printers)
- *    - Saves selected printer to localStorage
- *    - QZ status indicator in top bar (green/red/yellow)
- *    - Graceful fallback to browser print if QZ not running
- *    - Reprint works with same QZ → browser fallback logic
- *    - Print settings modal (printer name, test print button)
- * ─────────────────────────────────────────────────────────────
- *
- * SETUP:
- * 1. npm install qz-tray
- * 2. Download QZ Tray from https://qz.io/download/ and install on Windows
- * 3. Run QZ Tray (look for icon in system tray)
- * 4. Select your printer in the Print Settings modal (⚙ icon in top bar)
- * ─────────────────────────────────────────────────────────────
+ * ✅ getEmpToken defined ONCE (no duplicate)
+ * ✅ Barcode scan → searches ProductVariant.barcode (case-insensitive)
+ * ✅ Cart stores: variantId, productId, name, size, price, qty
+ * ✅ Combined scanner+search input (no tabs) — both work simultaneously
+ * ✅ Manual search → shows SizePickerModal for multi-variant products
+ * ✅ Duplicate scan → "Increase qty" OR "New row" modal
+ * ✅ completeBill sends variantId + size per item
+ * ✅ refreshProductCache fetches /api/store/product (includes variants)
+ * ✅ QZ Tray thermal print preserved
+ * ✅ IndexedDB offline queue preserved
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -42,11 +31,9 @@ import {
   Tag,
   Receipt,
   AlertCircle,
-  Zap,
   CreditCard,
   Banknote,
   Smartphone,
-  Clock,
   Maximize,
   Minimize,
   ShieldAlert,
@@ -57,12 +44,12 @@ import {
   Eye,
   AlertTriangle,
   ScanLine,
-  PackagePlus,
   Settings,
   Plug,
   PlugZap,
   CheckSquare,
   Square,
+  Layers,
 } from 'lucide-react';
 import { calculateTax, formatCurrency } from '@/lib/storeSettings';
 
@@ -87,54 +74,45 @@ function openDB() {
         const s = db.createObjectStore(STORE_LOCAL, { keyPath: 'localId' });
         s.createIndex('createdAt', 'createdAt');
       }
-      if (!db.objectStoreNames.contains(STORE_QUEUE)) {
+      if (!db.objectStoreNames.contains(STORE_QUEUE))
         db.createObjectStore(STORE_QUEUE, { keyPath: 'localId' });
-      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
-
 async function idbPut(storeName, value) {
   const db = await openDB();
   const tx = db.transaction(storeName, 'readwrite');
-  const st = tx.objectStore(storeName);
   return new Promise((res, rej) => {
-    const r = st.put(value);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-
-async function idbGetAll(storeName) {
-  const db = await openDB();
-  const tx = db.transaction(storeName, 'readonly');
-  const st = tx.objectStore(storeName);
-  return new Promise((res, rej) => {
-    const r = st.getAll();
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-
-async function idbDelete(storeName, key) {
-  const db = await openDB();
-  const tx = db.transaction(storeName, 'readwrite');
-  const st = tx.objectStore(storeName);
-  return new Promise((res, rej) => {
-    const r = st.delete(key);
+    const r = tx.objectStore(storeName).put(value);
     r.onsuccess = () => res();
     r.onerror = () => rej(r.error);
   });
 }
-
+async function idbGetAll(storeName) {
+  const db = await openDB();
+  const tx = db.transaction(storeName, 'readonly');
+  return new Promise((res, rej) => {
+    const r = tx.objectStore(storeName).getAll();
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbDelete(storeName, key) {
+  const db = await openDB();
+  const tx = db.transaction(storeName, 'readwrite');
+  return new Promise((res, rej) => {
+    const r = tx.objectStore(storeName).delete(key);
+    r.onsuccess = () => res();
+    r.onerror = () => rej(r.error);
+  });
+}
 async function idbCount(storeName) {
   const db = await openDB();
   const tx = db.transaction(storeName, 'readonly');
-  const st = tx.objectStore(storeName);
   return new Promise((res, rej) => {
-    const r = st.count();
+    const r = tx.objectStore(storeName).count();
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
@@ -147,7 +125,6 @@ function saveProductsToCache(products) {
     localStorage.setItem(LS_PRODUCTS_TS, String(Date.now()));
   } catch (_) {}
 }
-
 function getProductsFromCache() {
   try {
     const ts = Number(localStorage.getItem(LS_PRODUCTS_TS) || 0);
@@ -159,35 +136,43 @@ function getProductsFromCache() {
   }
 }
 
-function searchLocal(products, query) {
+/** Search products by name — returns products with variants */
+function searchLocalProducts(products, query) {
   const q = query.toLowerCase().trim();
   if (!q) return [];
   return products
-    .filter(
-      (p) =>
-        p.name?.toLowerCase().includes(q) ||
-        p.sku?.toLowerCase().includes(q) ||
-        p.barcode?.toLowerCase().includes(q)
-    )
+    .filter((p) => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q))
     .slice(0, 8);
 }
 
-function findProductByBarcode(products, barcode) {
+/**
+ * Find a ProductVariant by barcode across all products.
+ * Case-insensitive. Returns { product, variant } or null.
+ */
+function findVariantByBarcode(products, barcode) {
   if (!barcode) return null;
   const b = barcode.trim().toLowerCase();
-  return products.find((p) => p.barcode?.toLowerCase() === b) || null;
+  for (const product of products) {
+    const variant = (product.variants || []).find((v) => v.barcode?.toLowerCase() === b);
+    if (variant) return { product, variant };
+  }
+  return null;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Employee auth token ──────────────────────────────────────────────────────
+// Defined ONCE — reads from employee login localStorage keys.
+function getEmpToken() {
+  try {
+    return localStorage.getItem('empToken') || localStorage.getItem('employeeToken') || '';
+  } catch {
+    return '';
+  }
+}
+
+// ─── Misc helpers ─────────────────────────────────────────────────────────────
 function generateBillNumber() {
   const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const ms = String(now.getTime()).slice(-5);
-  return `EBILL-${date}-${ms}`;
-}
-
-function getEmpToken() {
-  return localStorage.getItem('empToken') || localStorage.getItem('employeeToken') || '';
+  return `EBILL-${now.toISOString().slice(0, 10).replace(/-/g, '')}-${String(now.getTime()).slice(-5)}`;
 }
 
 const PAYMENT_MODES = [
@@ -196,7 +181,6 @@ const PAYMENT_MODES = [
   { id: 'UPI', label: 'UPI', icon: Smartphone },
   { id: 'OTHER', label: 'Other', icon: Receipt },
 ];
-
 const PM_COLORS = {
   CASH: 'bg-green-100 text-green-700',
   CARD: 'bg-blue-100 text-blue-700',
@@ -207,10 +191,8 @@ const PM_COLORS = {
 // ─────────────────────────────────────────────────────────────────────────────
 // ══ QZ TRAY PRINT ENGINE ════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────────────────
-
-const ESC = '\x1B';
-const GS = '\x1D';
-
+const ESC = '\x1B',
+  GS = '\x1D';
 const ESCPOS = {
   INIT: ESC + '@',
   ALIGN_LEFT: ESC + 'a\x00',
@@ -219,39 +201,28 @@ const ESCPOS = {
   BOLD_OFF: ESC + 'E\x00',
   DOUBLE_SIZE: GS + '!\x11',
   NORMAL_SIZE: GS + '!\x00',
-  CUT: GS + 'V\x41\x00',
+  CUT: GS + 'VA\x00',
   FEED_3: ESC + 'd\x03',
-  FEED_1: ESC + 'd\x01',
   LINE_SPACING: ESC + '3\x20',
 };
-
 const PAPER_COLS = 48;
-
-function padR(str, w) {
-  return String(str ?? '')
+const padR = (s, w) =>
+  String(s ?? '')
     .slice(0, w)
     .padEnd(w);
-}
-function padL(str, w) {
-  return String(str ?? '')
+const padL = (s, w) =>
+  String(s ?? '')
     .slice(0, w)
     .padStart(w);
-}
-function centerStr(str, w) {
-  const s = String(str ?? '').slice(0, w);
-  const sp = Math.max(0, Math.floor((w - s.length) / 2));
-  return ' '.repeat(sp) + s;
-}
-function twoCol(label, val, w = PAPER_COLS) {
+const twoCol = (label, val, w = PAPER_COLS) => {
   const v = String(val);
   const maxL = w - v.length - 1;
   return String(label).slice(0, maxL).padEnd(maxL) + ' ' + v;
-}
-
-function fmtMoney(n, currency = 'INR') {
+};
+const fmtMoney = (n, cur = 'INR') => {
   const num = parseFloat(n || 0);
-  return currency === 'INR' ? `Rs.${num.toFixed(2)}` : `${currency}${num.toFixed(2)}`;
-}
+  return cur === 'INR' ? `Rs.${num.toFixed(2)}` : `${cur}${num.toFixed(2)}`;
+};
 
 function buildESCPOS(bill, settings = {}) {
   const s = { ...settings, ...(bill.settings || {}) };
@@ -259,7 +230,6 @@ function buildESCPOS(bill, settings = {}) {
   const fmt = (n) => fmtMoney(n, cur);
   const W = PAPER_COLS;
   const div = (c = '-') => c.repeat(W);
-
   const dateStr = new Date(bill.createdAt || Date.now()).toLocaleString('en-IN', {
     day: '2-digit',
     month: '2-digit',
@@ -268,84 +238,77 @@ function buildESCPOS(bill, settings = {}) {
     minute: '2-digit',
     hour12: true,
   });
-
-  let out = '';
-  out += ESCPOS.INIT;
-  out += ESCPOS.LINE_SPACING;
-
-  // Header
-  out += ESCPOS.ALIGN_CENTER;
-  if (s.showStoreName !== false && s.storeName) {
-    out += ESCPOS.BOLD_ON + ESCPOS.DOUBLE_SIZE;
-    out += s.storeName + '\n';
-    out += ESCPOS.NORMAL_SIZE + ESCPOS.BOLD_OFF;
-  }
+  let out = ESCPOS.INIT + ESCPOS.LINE_SPACING + ESCPOS.ALIGN_CENTER;
+  if (s.showStoreName !== false && s.storeName)
+    out +=
+      ESCPOS.BOLD_ON +
+      ESCPOS.DOUBLE_SIZE +
+      s.storeName +
+      '\n' +
+      ESCPOS.NORMAL_SIZE +
+      ESCPOS.BOLD_OFF;
   if (s.address) out += s.address + '\n';
   if (s.showGST && s.gstNumber) out += 'GST: ' + s.gstNumber + '\n';
-  out += '\n';
-
-  // Bill info
-  out += ESCPOS.ALIGN_LEFT;
-  out += div() + '\n';
+  out += '\n' + ESCPOS.ALIGN_LEFT + div() + '\n';
   out += ESCPOS.BOLD_ON + 'Bill No : ' + bill.billNumber + '\n' + ESCPOS.BOLD_OFF;
-  out += 'Date    : ' + dateStr + '\n';
-  out += 'Payment : ' + bill.paymentMode + '\n';
+  out += 'Date    : ' + dateStr + '\nPayment : ' + bill.paymentMode + '\n';
   if (bill.note) out += 'Note    : ' + String(bill.note).slice(0, 36) + '\n';
-  out += div() + '\n';
-
-  // Items header
-  out += ESCPOS.BOLD_ON;
-  out += padR('Item', 22) + padR('Qty', 4) + padL('Price', 10) + padL('Total', 10) + '\n';
-  out += ESCPOS.BOLD_OFF;
-  out += div() + '\n';
-
-  // Items
+  out += div() + '\n' + ESCPOS.BOLD_ON;
+  out +=
+    padR('Item', 22) +
+    padR('Qty', 4) +
+    padL('Price', 10) +
+    padL('Total', 10) +
+    '\n' +
+    ESCPOS.BOLD_OFF +
+    div() +
+    '\n';
   (bill.items || []).forEach((item) => {
-    const name = padR(item.name, 22);
-    const qty = padR(String(item.quantity), 4);
-    const price = padL(fmt(item.price), 10);
-    const total = padL(fmt(item.total), 10);
-    out += name + qty + price + total + '\n';
-    if (item.name.length > 22) out += '  ' + item.name.slice(22, 46) + '\n';
+    const name = item.size ? `${item.name} (${item.size})` : item.name;
+    out +=
+      padR(name, 22) +
+      padR(String(item.quantity), 4) +
+      padL(fmt(item.price), 10) +
+      padL(fmt(item.total), 10) +
+      '\n';
   });
-
-  out += div() + '\n';
-
-  // Totals
-  out += twoCol('Subtotal:', fmt(bill.subtotal)) + '\n';
-  if (parseFloat(bill.discount) > 0) {
+  out += div() + '\n' + twoCol('Subtotal:', fmt(bill.subtotal)) + '\n';
+  if (parseFloat(bill.discount) > 0)
     out += ESCPOS.BOLD_ON + twoCol('Discount:', '-' + fmt(bill.discount)) + '\n' + ESCPOS.BOLD_OFF;
-  }
   if (parseFloat(bill.taxAmount) > 0) {
-    if (s.taxType === 'GST_SPLIT') {
-      out += twoCol(`CGST (${s.cgst}%):`, fmt(bill.taxAmount / 2)) + '\n';
-      out += twoCol(`SGST (${s.sgst}%):`, fmt(bill.taxAmount / 2)) + '\n';
-    } else {
-      out += twoCol(`Tax (${s.taxPercent || 0}%):`, fmt(bill.taxAmount)) + '\n';
-    }
+    if (s.taxType === 'GST_SPLIT')
+      out +=
+        twoCol(`CGST (${s.cgst}%):`, fmt(bill.taxAmount / 2)) +
+        '\n' +
+        twoCol(`SGST (${s.sgst}%):`, fmt(bill.taxAmount / 2)) +
+        '\n';
+    else out += twoCol(`Tax (${s.taxPercent || 0}%):`, fmt(bill.taxAmount)) + '\n';
   }
-
-  out += div('=') + '\n';
-  out += ESCPOS.BOLD_ON + ESCPOS.ALIGN_CENTER + ESCPOS.DOUBLE_SIZE;
-  out += 'TOTAL: ' + fmt(bill.total) + '\n';
-  out += ESCPOS.NORMAL_SIZE + ESCPOS.BOLD_OFF;
-
-  // Footer
-  out += ESCPOS.ALIGN_CENTER;
-  out += div() + '\n';
-  out += (s.footerMessage || 'Thank You! Visit Again') + '\n';
-  out += '\n';
-  out += ESCPOS.FEED_3;
-  out += ESCPOS.CUT;
-
+  out +=
+    div('=') +
+    '\n' +
+    ESCPOS.BOLD_ON +
+    ESCPOS.ALIGN_CENTER +
+    ESCPOS.DOUBLE_SIZE +
+    'TOTAL: ' +
+    fmt(bill.total) +
+    '\n' +
+    ESCPOS.NORMAL_SIZE +
+    ESCPOS.BOLD_OFF;
+  out +=
+    ESCPOS.ALIGN_CENTER +
+    div() +
+    '\n' +
+    (s.footerMessage || 'Thank You! Visit Again') +
+    '\n\n' +
+    ESCPOS.FEED_3 +
+    ESCPOS.CUT;
   return out;
 }
 
-// ─── QZ Tray helpers ──────────────────────────────────────────────────────────
-let _qz = null;
-let _qzConn = false;
-let _qzConnecting = false;
-
+let _qz = null,
+  _qzConn = false,
+  _qzConnecting = false;
 async function loadQZ() {
   if (typeof window === 'undefined') return null;
   if (_qz) return _qz;
@@ -354,7 +317,6 @@ async function loadQZ() {
     _qz = mod.default || mod;
     return _qz;
   } catch (_) {}
-  // CDN fallback
   return new Promise((resolve) => {
     if (window.qz) {
       _qz = window.qz;
@@ -370,7 +332,6 @@ async function loadQZ() {
     document.head.appendChild(s);
   });
 }
-
 async function connectQZ() {
   if (_qzConn) return { ok: true };
   if (_qzConnecting) {
@@ -380,7 +341,7 @@ async function connectQZ() {
   _qzConnecting = true;
   try {
     const qz = await loadQZ();
-    if (!qz) throw new Error('QZ Tray library unavailable');
+    if (!qz) throw new Error('QZ unavailable');
     if (!qz.websocket.isActive()) await qz.websocket.connect({ retries: 2, delay: 1 });
     _qzConn = true;
     qz.websocket.setClosedCallbacks(() => {
@@ -393,10 +354,9 @@ async function connectQZ() {
     _qzConnecting = false;
   }
 }
-
 async function getQZPrinters() {
-  const conn = await connectQZ();
-  if (!conn.ok) return [];
+  const c = await connectQZ();
+  if (!c.ok) return [];
   try {
     const qz = await loadQZ();
     return (await qz.printers.find()) || [];
@@ -404,21 +364,19 @@ async function getQZPrinters() {
     return [];
   }
 }
-
 async function qzPrintRaw(data, printerName) {
-  const conn = await connectQZ();
-  if (!conn.ok) return { ok: false, error: conn.error };
+  const c = await connectQZ();
+  if (!c.ok) return { ok: false, error: c.error };
   try {
     const qz = await loadQZ();
-    const config = qz.configs.create(printerName, { encoding: 'Cp1252', copies: 1 });
-    await qz.print(config, [{ type: 'raw', format: 'plain', data }]);
+    const cfg = qz.configs.create(printerName, { encoding: 'Cp1252', copies: 1 });
+    await qz.print(cfg, [{ type: 'raw', format: 'plain', data }]);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };
   }
 }
 
-// ─── Browser print fallback (styled HTML) ─────────────────────────────────────
 function browserPrintFallback(bill, settings = {}) {
   const s = { ...settings, ...(bill.settings || {}) };
   const cur = s.currency || 'INR';
@@ -428,66 +386,19 @@ function browserPrintFallback(bill, settings = {}) {
       currency: cur,
       minimumFractionDigits: 2,
     }).format(parseFloat(n || 0));
-
   const dateStr = new Date(bill.createdAt || Date.now()).toLocaleString('en-IN');
-
   const itemRows = (bill.items || [])
     .map(
-      (it) => `
-      <tr>
-        <td style="padding:3px 2px;border-bottom:1px dotted #ddd">${it.name}</td>
-        <td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:center">${it.quantity}</td>
-        <td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:right">${fmtN(it.price)}</td>
-        <td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:right">${fmtN(it.total)}</td>
-      </tr>`
+      (it) =>
+        `<tr><td style="padding:3px 2px;border-bottom:1px dotted #ddd">${it.name}${it.size ? ` <span style="font-size:10px;background:#eee;padding:1px 4px;border-radius:3px">${it.size}</span>` : ''}</td><td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:center">${it.quantity}</td><td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:right">${fmtN(it.price)}</td><td style="padding:3px 2px;border-bottom:1px dotted #ddd;text-align:right">${fmtN(it.total)}</td></tr>`
     )
     .join('');
-
   let taxRows = '';
-  if (s.taxType === 'GST_SPLIT' && parseFloat(bill.taxAmount) > 0) {
-    taxRows = `
-      <tr><td colspan="3" style="padding:2px">CGST (${s.cgst}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount / 2)}</td></tr>
-      <tr><td colspan="3" style="padding:2px">SGST (${s.sgst}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount / 2)}</td></tr>`;
-  } else if (parseFloat(bill.taxAmount) > 0) {
+  if (s.taxType === 'GST_SPLIT' && parseFloat(bill.taxAmount) > 0)
+    taxRows = `<tr><td colspan="3" style="padding:2px">CGST (${s.cgst}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount / 2)}</td></tr><tr><td colspan="3" style="padding:2px">SGST (${s.sgst}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount / 2)}</td></tr>`;
+  else if (parseFloat(bill.taxAmount) > 0)
     taxRows = `<tr><td colspan="3" style="padding:2px">Tax (${s.taxPercent || 0}%)</td><td style="text-align:right;padding:2px">${fmtN(bill.taxAmount)}</td></tr>`;
-  }
-
-  const html = `<!DOCTYPE html><html><head><title>${bill.billNumber}</title>
-    <style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:'Courier New',monospace;font-size:12px;max-width:302px;margin:0 auto;padding:6px 4px}
-      h2{text-align:center;font-size:15px;margin:4px 0}
-      .c{text-align:center}.m{text-align:center;font-size:11px;color:#555;margin:2px 0}
-      .d{border-top:1px dashed #aaa;margin:5px 0}.ds{border-top:2px solid #111;margin:5px 0}
-      table{width:100%;border-collapse:collapse}
-      th{font-size:10px;border-bottom:1px solid #aaa;padding:3px 2px;text-align:left}
-      .tr td{font-weight:bold;font-size:14px;border-top:2px solid #111;padding:5px 2px}
-      .foot{text-align:center;margin-top:8px;font-size:11px;color:#777;border-top:1px dashed #aaa;padding-top:6px}
-      @media print{body{max-width:100%}@page{margin:2mm;size:80mm auto}}
-    </style></head><body>
-    ${s.showStoreName !== false && s.storeName ? `<h2>${s.storeName}</h2>` : ''}
-    ${s.address ? `<p class="m">${s.address}</p>` : ''}
-    ${s.showGST && s.gstNumber ? `<p class="m">GST: ${s.gstNumber}</p>` : ''}
-    <div class="d"></div>
-    <p class="m"><strong>${bill.billNumber}</strong></p>
-    <p class="m">${dateStr}</p>
-    <p class="m">Payment: <strong>${bill.paymentMode}</strong></p>
-    ${bill.note ? `<p class="m">Note: ${bill.note}</p>` : ''}
-    <div class="d"></div>
-    <table>
-      <thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead>
-      <tbody>${itemRows}</tbody>
-      <tfoot>
-        <tr><td colspan="3" style="padding:2px">Subtotal</td><td style="text-align:right;padding:2px">${fmtN(bill.subtotal)}</td></tr>
-        ${parseFloat(bill.discount) > 0 ? `<tr><td colspan="3" style="padding:2px;color:#c00">Discount</td><td style="text-align:right;padding:2px;color:#c00">-${fmtN(bill.discount)}</td></tr>` : ''}
-        ${taxRows}
-        <tr class="tr"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtN(bill.total)}</td></tr>
-      </tfoot>
-    </table>
-    ${s.footerMessage ? `<div class="foot">${s.footerMessage}</div>` : '<div class="foot">Thank You! Visit Again</div>'}
-    <script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);}<\/script>
-    </body></html>`;
-
+  const html = `<!DOCTYPE html><html><head><title>${bill.billNumber}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;max-width:302px;margin:0 auto;padding:6px 4px}h2{text-align:center;font-size:15px;margin:4px 0}.m{text-align:center;font-size:11px;color:#555;margin:2px 0}.d{border-top:1px dashed #aaa;margin:5px 0}table{width:100%;border-collapse:collapse}th{font-size:10px;border-bottom:1px solid #aaa;padding:3px 2px;text-align:left}.tr td{font-weight:bold;font-size:14px;border-top:2px solid #111;padding:5px 2px}.foot{text-align:center;margin-top:8px;font-size:11px;color:#777;border-top:1px dashed #aaa;padding-top:6px}@media print{body{max-width:100%}@page{margin:2mm;size:80mm auto}}</style></head><body>${s.showStoreName !== false && s.storeName ? `<h2>${s.storeName}</h2>` : ''}${s.address ? `<p class="m">${s.address}</p>` : ''}${s.showGST && s.gstNumber ? `<p class="m">GST: ${s.gstNumber}</p>` : ''}<div class="d"></div><p class="m"><strong>${bill.billNumber}</strong></p><p class="m">${dateStr}</p><p class="m">Payment: <strong>${bill.paymentMode}</strong></p>${bill.note ? `<p class="m">Note: ${bill.note}</p>` : ''}<div class="d"></div><table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Rate</th><th style="text-align:right">Amt</th></tr></thead><tbody>${itemRows}</tbody><tfoot><tr><td colspan="3" style="padding:2px">Subtotal</td><td style="text-align:right;padding:2px">${fmtN(bill.subtotal)}</td></tr>${parseFloat(bill.discount) > 0 ? `<tr><td colspan="3" style="padding:2px;color:#c00">Discount</td><td style="text-align:right;padding:2px;color:#c00">-${fmtN(bill.discount)}</td></tr>` : ''}${taxRows}<tr class="tr"><td colspan="3">TOTAL</td><td style="text-align:right">${fmtN(bill.total)}</td></tr></tfoot></table>${s.footerMessage ? `<div class="foot">${s.footerMessage}</div>` : '<div class="foot">Thank You! Visit Again</div>'}<script>window.onload=function(){window.print();setTimeout(function(){window.close();},600);};<\/script></body></html>`;
   const win = window.open('', '_blank', 'width=380,height=620');
   if (win) {
     win.document.write(html);
@@ -495,29 +406,36 @@ function browserPrintFallback(bill, settings = {}) {
   }
 }
 
-// ─── Main print dispatcher ────────────────────────────────────────────────────
-// Returns: { method: 'qz' | 'browser', ok: boolean, error?: string }
 async function printBillAuto(bill, settings, printerName) {
   if (!printerName) {
     browserPrintFallback(bill, settings);
     return { method: 'browser', ok: true };
   }
-  const escData = buildESCPOS(bill, settings);
-  const result = await qzPrintRaw(escData, printerName);
+  const result = await qzPrintRaw(buildESCPOS(bill, settings), printerName);
   if (result.ok) return { method: 'qz', ok: true };
-  // QZ failed → fallback
-  console.warn('QZ print failed, browser fallback:', result.error);
   browserPrintFallback(bill, settings);
   return { method: 'browser', ok: true, error: result.error };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ── BARCODE INPUT COMPONENT ──────────────────────────────────────────────────
+// ── COMBINED BARCODE + SEARCH INPUT ─────────────────────────────────────────
+// No tabs — scanner and manual search work in same input.
+// Upper and lowercase barcodes both work.
 // ─────────────────────────────────────────────────────────────────────────────
-function BarcodeInput({ onScan, disabled = false }) {
+function CombinedInput({
+  onScan,
+  onSearch,
+  disabled = false,
+  searchResults,
+  onSelectProduct,
+  searchLoading,
+}) {
   const inputRef = useRef(null);
   const [value, setValue] = useState('');
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
   const lockRef = useRef(null);
+  const searchTimer = useRef(null);
 
   useEffect(() => {
     if (disabled) return;
@@ -528,8 +446,10 @@ function BarcodeInput({ onScan, disabled = false }) {
     lockRef.current = setInterval(focus, 500);
     const onClick = (e) => {
       const tag = e.target.tagName.toLowerCase();
-      const interactive = ['input', 'textarea', 'button', 'select', 'a'];
-      if (!interactive.includes(tag) && !e.target.closest('[role="dialog"]'))
+      if (
+        !['input', 'textarea', 'button', 'select', 'a'].includes(tag) &&
+        !e.target.closest('[role="dialog"]')
+      )
         setTimeout(() => inputRef.current?.focus(), 0);
     };
     document.addEventListener('click', onClick);
@@ -539,38 +459,113 @@ function BarcodeInput({ onScan, disabled = false }) {
     };
   }, [disabled]);
 
+  useEffect(() => {
+    setShowDropdown(searchResults && searchResults.length > 0 && value.trim().length > 0);
+    setActiveIdx(-1);
+  }, [searchResults, value]);
+
+  const handleChange = (e) => {
+    const v = e.target.value;
+    setValue(v);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      if (v.trim()) onSearch(v.trim());
+    }, 120);
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const barcode = value.trim();
-      if (barcode) {
-        onScan(barcode);
-        setValue('');
+      const v = value.trim();
+      if (!v) return;
+      if (showDropdown && searchResults?.length > 0) {
+        const idx = activeIdx >= 0 ? activeIdx : 0;
+        if (searchResults[idx]) {
+          onSelectProduct(searchResults[idx]);
+          setValue('');
+          setShowDropdown(false);
+          return;
+        }
       }
+      // Treat as barcode
+      onScan(v);
+      setValue('');
+      setShowDropdown(false);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIdx((i) => Math.min(i + 1, (searchResults?.length || 1) - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Escape') {
+      setValue('');
+      setShowDropdown(false);
     }
   };
 
   return (
     <div className="relative">
       <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500">
-        <ScanLine size={16} />
+        <ScanLine size={15} />
       </div>
       <input
         ref={inputRef}
         type="text"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onFocus={() => searchResults?.length > 0 && value.trim() && setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 180)}
         disabled={disabled}
-        placeholder="Scan barcode (auto-focused)…"
-        className="w-full pl-9 pr-4 py-2.5 rounded-xl border-2 border-blue-300 bg-blue-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400 placeholder:text-blue-400 font-mono disabled:opacity-50"
+        placeholder="Scan barcode or type product name…"
+        className="w-full pl-9 pr-28 py-2.5 rounded-xl border-2 border-blue-300 bg-blue-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 font-mono disabled:opacity-50"
         autoComplete="off"
         spellCheck={false}
         data-barcode-input="true"
       />
-      {value && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-blue-500 font-mono bg-blue-100 px-1.5 py-0.5 rounded">
-          {value.length}
+      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+        {searchLoading && (
+          <div className="w-3.5 h-3.5 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+        )}
+        {value && (
+          <span className="text-[10px] text-blue-500 font-mono bg-blue-100 px-1.5 py-0.5 rounded">
+            {value.length}ch
+          </span>
+        )}
+        <Search size={13} className="text-blue-400" />
+      </div>
+
+      {showDropdown && searchResults && searchResults.length > 0 && (
+        <div className="absolute left-0 right-0 top-full z-40 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden mt-1 max-h-64 overflow-y-auto">
+          {searchResults.map((p, i) => (
+            <button
+              key={p.id}
+              onMouseDown={() => {
+                onSelectProduct(p);
+                setValue('');
+                setShowDropdown(false);
+              }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-blue-50 ${i === activeIdx ? 'bg-blue-50' : ''} ${i !== 0 ? 'border-t border-slate-100' : ''}`}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {(p.variants || []).map((v) => (
+                    <span
+                      key={v.id}
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${v.stock === 0 ? 'bg-red-50 text-red-400' : 'bg-blue-50 text-blue-600'}`}
+                    >
+                      {v.size} ₹{v.price}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-1 text-xs text-blue-600 font-medium flex-shrink-0">
+                <Layers size={10} />
+                {(p.variants || []).length} sizes
+              </div>
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -578,263 +573,91 @@ function BarcodeInput({ onScan, disabled = false }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ── useBarcodeScanner hook ───────────────────────────────────────────────────
+// ── SIZE PICKER MODAL ────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-function useBarcodeScanner({
-  localProducts,
-  cartItems,
-  addToCart,
-  setDuplicateModal,
-  setCreateProductModal,
-}) {
-  const handleScan = useCallback(
-    (barcode) => {
-      const product = findProductByBarcode(localProducts, barcode);
-      if (!product) {
-        setCreateProductModal({ barcode });
-        return;
-      }
-      const existingIdx = cartItems.findIndex((i) => i.productId === product.id);
-      if (existingIdx >= 0) setDuplicateModal({ product, existingIdx });
-      else addToCart(product);
-    },
-    [localProducts, cartItems, addToCart, setDuplicateModal, setCreateProductModal]
-  );
-  return { handleScan };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ── CREATE PRODUCT MODAL ──────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────────────
-function CreateProductModal({ barcode, onClose, onCreated, settings }) {
-  const [form, setForm] = useState({
-    name: '',
-    price: '',
-    mrp: '',
-    sku: '',
-    quantity: '1',
-    barcode: barcode || '',
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const nameRef = useRef(null);
-
-  useEffect(() => {
-    setTimeout(() => nameRef.current?.focus(), 100);
-  }, []);
-
-  const handleSubmit = async () => {
-    if (!form.name.trim() || !form.price) {
-      setError('Name and price are required.');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      const token = getEmpToken();
-      const res = await fetch('/api/store/product', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          price: parseFloat(form.price),
-          mrp: parseFloat(form.mrp || form.price),
-          sku: form.sku.trim() || undefined,
-          barcode: form.barcode.trim() || undefined,
-          quantity: parseInt(form.quantity) || 1,
-          description: '',
-          images: [],
-          category: [],
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create product');
-      onCreated(data.product);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleKey = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-    if (e.key === 'Escape') onClose();
-  };
-
+function SizePickerModal({ product, onSelect, onClose }) {
+  const variants = product.variants || [];
   return (
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
     >
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onKeyDown={handleKey}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
         <div className="flex items-center gap-3 mb-5">
           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-            <PackagePlus size={20} className="text-blue-600" />
+            <Layers size={20} className="text-blue-600" />
           </div>
           <div>
-            <h3 className="font-bold text-slate-800">Create new product</h3>
-            <p className="text-xs text-slate-400 font-mono mt-0.5">Barcode: {barcode}</p>
+            <h3 className="font-bold text-slate-800">Select Size</h3>
+            <p className="text-xs text-slate-500 mt-0.5">{product.name}</p>
           </div>
           <button
             onClick={onClose}
-            className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            className="ml-auto p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
           >
             <X size={16} />
           </button>
         </div>
-        {error && (
-          <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-            {error}
+        {variants.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-4">No variants found.</p>
+        ) : (
+          <div className="space-y-2">
+            {variants.map((v) => {
+              const isOut = v.stock === 0;
+              return (
+                <button
+                  key={v.id}
+                  onClick={() => !isOut && onSelect(product, v)}
+                  disabled={isOut}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all ${isOut ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' : 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-400 hover:bg-blue-100'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`inline-flex items-center justify-center w-10 h-8 rounded-lg text-xs font-bold ${isOut ? 'bg-slate-100 text-slate-300' : 'bg-blue-600 text-white'}`}
+                    >
+                      {v.size}
+                    </span>
+                    <span className="font-semibold">
+                      ₹{Number(v.price).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${v.stock === 0 ? 'bg-red-50 text-red-500' : v.stock < 5 ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}
+                  >
+                    {isOut ? 'Out of stock' : `${v.stock} left`}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
-        <div className="space-y-3">
-          <div>
-            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-              Product Name *
-            </label>
-            <input
-              ref={nameRef}
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              placeholder="e.g. Coconut Oil 500ml"
-              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                Selling Price *
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.price}
-                onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
-                placeholder="0.00"
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                MRP
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.mrp}
-                onChange={(e) => setForm((p) => ({ ...p, mrp: e.target.value }))}
-                placeholder="Same as price"
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                SKU
-              </label>
-              <input
-                type="text"
-                value={form.sku}
-                onChange={(e) => setForm((p) => ({ ...p, sku: e.target.value }))}
-                placeholder="Optional"
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-                Opening Stock
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={form.quantity}
-                onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
-                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-300"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-              Barcode
-            </label>
-            <input
-              type="text"
-              value={form.barcode}
-              onChange={(e) => setForm((p) => ({ ...p, barcode: e.target.value }))}
-              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
-            />
-          </div>
-        </div>
-        <div className="flex gap-2 mt-5">
-          <button
-            onClick={handleSubmit}
-            disabled={loading}
-            className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Saving…
-              </>
-            ) : (
-              <>
-                <PackagePlus size={16} />
-                Create &amp; Add to Cart
-              </>
-            )}
-          </button>
-          <button
-            onClick={onClose}
-            className="px-4 py-3 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl text-sm"
-          >
-            Cancel
-          </button>
-        </div>
-        <p className="text-center text-[10px] text-slate-400 mt-3">
-          Press Enter to save · Esc to cancel
-        </p>
+        <button
+          onClick={onClose}
+          className="mt-4 w-full py-2.5 text-slate-400 hover:text-slate-600 text-sm rounded-xl hover:bg-slate-50"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ══ PRINT SETTINGS MODAL (NEW) ═══════════════════════════════════════════════
+// ── PRINT SETTINGS MODAL ────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-function PrintSettingsModal({
-  onClose,
-  printerName,
-  onPrinterChange,
-  qzStatus,
-  settings,
-  onTestPrint,
-}) {
+function PrintSettingsModal({ onClose, printerName, onPrinterChange, qzStatus }) {
   const [printers, setPrinters] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(printerName || '');
-  const [testMsg, setTestMsg] = useState('');
 
   useEffect(() => {
     fetchPrinters();
   }, []);
-
   const fetchPrinters = async () => {
     setLoading(true);
     try {
-      const list = await getQZPrinters();
-      setPrinters(list);
+      setPrinters(await getQZPrinters());
     } catch (_) {
       setPrinters([]);
     } finally {
@@ -842,12 +665,6 @@ function PrintSettingsModal({
     }
   };
 
-  const handleSave = () => {
-    onPrinterChange(selected);
-    onClose();
-  };
-
-  
   const qzColors = {
     connected: 'bg-green-100 text-green-700 border-green-300',
     connecting: 'bg-yellow-100 text-yellow-700 border-yellow-300',
@@ -861,7 +678,6 @@ function PrintSettingsModal({
       aria-modal="true"
     >
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-        {/* Header */}
         <div className="flex items-center gap-3 mb-5">
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
             <Printer size={20} className="text-slate-600" />
@@ -872,35 +688,29 @@ function PrintSettingsModal({
           </div>
           <button
             onClick={onClose}
-            className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            className="ml-auto p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
           >
             <X size={16} />
           </button>
         </div>
-
-        {/* QZ Status */}
         <div
           className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium mb-4 ${qzColors[qzStatus] || qzColors.disconnected}`}
         >
           {qzStatus === 'connected' ? (
             <>
-              <PlugZap size={15} /> QZ Tray connected — direct print ready
+              <PlugZap size={15} /> QZ Tray connected
             </>
           ) : qzStatus === 'connecting' ? (
             <>
               <div className="w-3.5 h-3.5 border-2 border-current/40 border-t-current rounded-full animate-spin" />{' '}
-              Connecting to QZ Tray…
+              Connecting…
             </>
           ) : (
             <>
-              <Plug size={15} /> QZ Tray not running — will use browser print
+              <Plug size={15} /> QZ not running — browser print fallback
             </>
           )}
         </div>
-
-       
-
-        {/* Printer selector */}
         <div className="mb-4">
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -918,7 +728,6 @@ function PrintSettingsModal({
             <div className="text-sm text-slate-400 py-3 text-center">Loading printers…</div>
           ) : printers.length > 0 ? (
             <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {/* Manual entry option */}
               <button
                 onClick={() => setSelected('')}
                 className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm text-left transition-all ${!selected ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-slate-200 hover:border-slate-300 text-slate-600'}`}
@@ -928,7 +737,7 @@ function PrintSettingsModal({
                 ) : (
                   <Square size={15} className="text-slate-300" />
                 )}
-                <span className="italic text-slate-400">None (use browser print)</span>
+                <span className="italic text-slate-400">None (browser print)</span>
               </button>
               {printers.map((p) => (
                 <button
@@ -951,27 +760,22 @@ function PrintSettingsModal({
               <p className="text-xs text-slate-400 text-center py-2">
                 {qzStatus !== 'connected' ? 'Connect QZ Tray to see printers' : 'No printers found'}
               </p>
-              <div>
-                <label className="text-[10px] text-slate-500 block mb-1">
-                  Or enter printer name manually:
-                </label>
-                <input
-                  type="text"
-                  value={selected}
-                  onChange={(e) => setSelected(e.target.value)}
-                  placeholder="e.g. TVS MSP 250 STAR"
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 font-mono"
-                />
-              </div>
+              <input
+                type="text"
+                value={selected}
+                onChange={(e) => setSelected(e.target.value)}
+                placeholder="Enter printer name manually…"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-300 font-mono"
+              />
             </div>
           )}
         </div>
-
-        
-
         <div className="flex gap-2">
           <button
-            onClick={handleSave}
+            onClick={() => {
+              onPrinterChange(selected);
+              onClose();
+            }}
             className="flex-1 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-semibold text-sm"
           >
             Save Settings
@@ -992,18 +796,13 @@ function PrintSettingsModal({
 // ══ MAIN COMPONENT ═══════════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────────────────
 export default function EmployeeBillingPage() {
-  // ── Auth/settings ──────────────────────────────────────────────
   const [employee, setEmployee] = useState(null);
   const [hasPermission, setHasPermission] = useState(null);
   const [settings, setSettings] = useState(null);
-
-  // ── Tab ────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('billing');
 
-  // ── Billing state ──────────────────────────────────────────────
-  const [searchQuery, setSearchQuery] = useState('');
+  // Billing
   const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [cartItems, setCartItems] = useState([]);
   const [billDiscount, setBillDiscount] = useState(0);
   const [paymentMode, setPaymentMode] = useState('CASH');
@@ -1015,23 +814,19 @@ export default function EmployeeBillingPage() {
   const [isOnline, setIsOnline] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [duplicateModal, setDuplicateModal] = useState(null);
-  const [activeSuggIdx, setActiveSuggIdx] = useState(-1);
+  const [sizePickerModal, setSizePickerModal] = useState(null);
   const [editingQty, setEditingQty] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [localProducts, setLocalProducts] = useState([]);
-
-  // ── Barcode state ──────────────────────────────────────────────
-  const [createProductModal, setCreateProductModal] = useState(null);
   const [lastScanFeedback, setLastScanFeedback] = useState(null);
-  const [scanMode, setScanMode] = useState(true);
 
-  // ── Print state (NEW) ─────────────────────────────────────────
+  // Print
   const [printerName, setPrinterName] = useState('');
-  const [qzStatus, setQzStatus] = useState('disconnected'); // 'connected'|'connecting'|'disconnected'
+  const [qzStatus, setQzStatus] = useState('disconnected');
   const [showPrintSettings, setShowPrintSettings] = useState(false);
-  const [lastPrintMethod, setLastPrintMethod] = useState(null); // 'qz' | 'browser'
+  const [lastPrintMethod, setLastPrintMethod] = useState(null);
 
-  // ── History state ──────────────────────────────────────────────
+  // History
   const [historyBills, setHistoryBills] = useState([]);
   const [localBills, setLocalBills] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -1046,33 +841,26 @@ export default function EmployeeBillingPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [queueBillIds, setQueueBillIds] = useState(new Set());
 
-  // ── Refs ───────────────────────────────────────────────────────
-  const searchRef = useRef(null);
   const syncTimerRef = useRef(null);
   const searchTimer = useRef(null);
   const apiCache = useRef({});
   const historyTimer = useRef(null);
   const feedbackTimer = useRef(null);
 
-  // ── Computed ───────────────────────────────────────────────────
+  // Computed
   const subtotal = cartItems.reduce((s, i) => s + i.price * i.quantity - (i.itemDiscount || 0), 0);
   const discounted = Math.max(0, subtotal - Number(billDiscount || 0));
   const taxResult = calculateTax(discounted, settings);
   const grandTotal = taxResult.total;
   const fmt = (n) => formatCurrency(n, settings);
 
-  // ─────────────────────────────────────────────────────────────
-  // Scan feedback
-  // ─────────────────────────────────────────────────────────────
   const showScanFeedback = useCallback((type, message) => {
     clearTimeout(feedbackTimer.current);
     setLastScanFeedback({ type, message });
-    feedbackTimer.current = setTimeout(() => setLastScanFeedback(null), 2000);
+    feedbackTimer.current = setTimeout(() => setLastScanFeedback(null), 2500);
   }, []);
 
-  // ─────────────────────────────────────────────────────────────
-  // Init
-  // ─────────────────────────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────
   useEffect(() => {
     // Auth
     const empRaw = localStorage.getItem('empData') || localStorage.getItem('employeeData');
@@ -1080,8 +868,7 @@ export default function EmployeeBillingPage() {
       try {
         const emp = JSON.parse(empRaw);
         setEmployee(emp);
-        const canBill = emp?.role === 'STORE_OWNER' || emp?.permissions?.billing === true;
-        setHasPermission(canBill);
+        setHasPermission(emp?.role === 'STORE_OWNER' || emp?.permissions?.billing === true);
       } catch {
         setHasPermission(false);
       }
@@ -1091,12 +878,11 @@ export default function EmployeeBillingPage() {
 
     // Settings
     const token = getEmpToken();
-    if (token) {
+    if (token)
       fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.json())
         .then((d) => setSettings(d.settings || null))
         .catch(console.error);
-    }
 
     // Network
     const onOnline = () => {
@@ -1109,23 +895,19 @@ export default function EmployeeBillingPage() {
     window.addEventListener('offline', onOffline);
     setIsOnline(navigator.onLine);
 
-    // Queue + local bills
     refreshQueueCount();
     idbGetAll(STORE_LOCAL).then((bills) =>
       setLocalBills(bills.sort((a, b) => b.createdAt - a.createdAt))
     );
     idbGetAll(STORE_QUEUE).then((q) => setQueueBillIds(new Set(q.map((b) => b.localId))));
 
-    // Fullscreen
     const onFS = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', onFS);
 
-    // Product cache
     const cached = getProductsFromCache();
     if (cached) setLocalProducts(cached);
     if (navigator.onLine) refreshProductCache();
 
-    // ── QZ Tray init (NEW) ──────────────────────────────────────
     const savedPrinter = localStorage.getItem(LS_PRINTER_NAME) || '';
     setPrinterName(savedPrinter);
     initQZConnection();
@@ -1139,14 +921,11 @@ export default function EmployeeBillingPage() {
     };
   }, []); // eslint-disable-line
 
-  // ── QZ connection init ────────────────────────────────────────
   const initQZConnection = async () => {
     setQzStatus('connecting');
-    const result = await connectQZ();
-    setQzStatus(result.ok ? 'connected' : 'disconnected');
+    const r = await connectQZ();
+    setQzStatus(r.ok ? 'connected' : 'disconnected');
   };
-
-  // Save printer name to localStorage when changed
   const handlePrinterChange = (name) => {
     setPrinterName(name);
     try {
@@ -1154,23 +933,17 @@ export default function EmployeeBillingPage() {
     } catch (_) {}
   };
 
-  // ESC handler
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
         setSuggestions([]);
-        setShowSuggestions(false);
-        if (createProductModal) setCreateProductModal(null);
-        if (showPrintSettings) setShowPrintSettings(false);
+        setSizePickerModal(null);
+        setShowPrintSettings(false);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [createProductModal, showPrintSettings]);
-
-  useEffect(() => {
-    if (hasPermission) setTimeout(() => searchRef.current?.focus(), 100);
-  }, [hasPermission]);
+  }, []);
 
   useEffect(() => {
     if (activeTab === 'history') loadHistory(1);
@@ -1183,13 +956,11 @@ export default function EmployeeBillingPage() {
     return () => clearTimeout(historyTimer.current);
   }, [historySearch]); // eslint-disable-line
 
-  // ─────────────────────────────────────────────────────────────
-  // Product cache
-  // ─────────────────────────────────────────────────────────────
+  // ── Product cache — fetch /api/store/product (includes variants) ──
   const refreshProductCache = async () => {
     try {
       const token = getEmpToken();
-      const res = await fetch('/api/products?limit=500', {
+      const res = await fetch('/api/store/product', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
@@ -1201,9 +972,43 @@ export default function EmployeeBillingPage() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // History
-  // ─────────────────────────────────────────────────────────────
+  // ── Search handler ────────────────────────────────────────────
+  const handleSearch = useCallback(
+    (query) => {
+      const q = query.trim();
+      if (!q) {
+        setSuggestions([]);
+        return;
+      }
+
+      const local = searchLocalProducts(localProducts, q);
+      setSuggestions(local);
+
+      if (isOnline && !apiCache.current[q]) {
+        clearTimeout(searchTimer.current);
+        searchTimer.current = setTimeout(async () => {
+          setSearchLoading(true);
+          try {
+            const token = getEmpToken();
+            const res = await fetch(`/api/store/product?search=${encodeURIComponent(q)}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            const data = await res.json();
+            const fresh = data.products || [];
+            apiCache.current[q] = fresh;
+            setSuggestions(fresh);
+          } catch {
+            /* keep local */
+          } finally {
+            setSearchLoading(false);
+          }
+        }, 150);
+      }
+    },
+    [localProducts, isOnline]
+  );
+
+  // ── History ───────────────────────────────────────────────────
   const loadHistory = async (page = 1) => {
     setHistoryLoading(true);
     try {
@@ -1231,57 +1036,6 @@ export default function EmployeeBillingPage() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Search (text mode)
-  // ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (scanMode) return;
-    clearTimeout(searchTimer.current);
-    const q = searchQuery.trim();
-    if (!q) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
-    if (!isOnline) {
-      const results = searchLocal(localProducts, q);
-      setSuggestions(results);
-      setShowSuggestions(results.length > 0);
-      setActiveSuggIdx(-1);
-      return;
-    }
-    if (apiCache.current[q]) {
-      setSuggestions(apiCache.current[q]);
-      setShowSuggestions(apiCache.current[q].length > 0);
-      setActiveSuggIdx(-1);
-    }
-    searchTimer.current = setTimeout(async () => {
-      setSearchLoading(true);
-      try {
-        const token = getEmpToken();
-        const res = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const data = await res.json();
-        const results = data.products || [];
-        apiCache.current[q] = results;
-        setSuggestions(results);
-        setShowSuggestions(results.length > 0);
-        setActiveSuggIdx(-1);
-      } catch {
-        const results = searchLocal(localProducts, q);
-        setSuggestions(results);
-        setShowSuggestions(results.length > 0);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 150);
-    return () => clearTimeout(searchTimer.current);
-  }, [searchQuery, isOnline, scanMode]); // eslint-disable-line
-
-  // ─────────────────────────────────────────────────────────────
-  // Fullscreen
-  // ─────────────────────────────────────────────────────────────
   const toggleFullscreen = () => {
     if (!document.fullscreenElement)
       document.documentElement.requestFullscreen().catch(console.error);
@@ -1289,133 +1043,82 @@ export default function EmployeeBillingPage() {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // Keyboard nav
+  // Cart helpers
   // ─────────────────────────────────────────────────────────────
-  const handleSearchKeyDown = (e) => {
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setActiveSuggIdx((i) => Math.min(i + 1, suggestions.length - 1));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setActiveSuggIdx((i) => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && showSuggestions && suggestions.length) {
-      e.preventDefault();
-      const idx = activeSuggIdx >= 0 ? activeSuggIdx : 0;
-      if (suggestions[idx]) addToCart(suggestions[idx]);
-    }
-  };
+  const buildCartItem = (product, variant) => ({
+    productId: product.id,
+    variantId: variant.id,
+    name: product.name,
+    size: variant.size,
+    price: variant.price,
+    quantity: 1,
+    itemDiscount: 0,
+    total: variant.price,
+    stock: variant.stock,
+  });
 
-  // ─────────────────────────────────────────────────────────────
-  // Cart
-  // ─────────────────────────────────────────────────────────────
-  const addToCart = useCallback(
-    (product) => {
-      const existing = cartItems.findIndex((i) => i.productId === product.id);
-      if (existing >= 0) {
-        setDuplicateModal({ product, existingIdx: existing });
-        setSearchQuery('');
-        setSuggestions([]);
-        setShowSuggestions(false);
+  const addVariantToCart = useCallback(
+    (product, variant) => {
+      const existingIdx = cartItems.findIndex((i) => i.variantId === variant.id);
+      if (existingIdx >= 0) {
+        setDuplicateModal({ product, variant, existingIdx });
         return;
       }
-      setCartItems((prev) => [
-        ...prev,
-        {
-          productId: product.id,
-          name: product.name,
-          price: product.price,
-          quantity: 1,
-          itemDiscount: 0,
-          total: product.price,
-          sku: product.sku || '',
-          barcode: product.barcode || '',
-          stock: product.quantity || 0,
-        },
-      ]);
-      setSearchQuery('');
-      setSuggestions([]);
-      setShowSuggestions(false);
-      setActiveSuggIdx(-1);
-      showScanFeedback('success', `✓ ${product.name}`);
-      if (!scanMode) searchRef.current?.focus();
+      if (variant.stock === 0) {
+        showScanFeedback('error', `Out of stock: ${product.name} (${variant.size})`);
+        return;
+      }
+      setCartItems((prev) => [...prev, buildCartItem(product, variant)]);
+      showScanFeedback('success', `✓ ${product.name} (${variant.size})`);
     },
-    [cartItems, scanMode, showScanFeedback]
-  );
-
-  const { handleScan } = useBarcodeScanner({
-    localProducts,
-    cartItems,
-    addToCart,
-    setDuplicateModal,
-    setCreateProductModal,
-  });
+    [cartItems, showScanFeedback]
+  ); // eslint-disable-line
 
   const handleBarcodeScanned = useCallback(
     (barcode) => {
-      const product = findProductByBarcode(localProducts, barcode);
-      if (!product) showScanFeedback('error', `Unknown: ${barcode}`);
-      handleScan(barcode);
+      const found = findVariantByBarcode(localProducts, barcode);
+      if (!found) {
+        showScanFeedback('error', `Unknown barcode: ${barcode}`);
+        return;
+      }
+      addVariantToCart(found.product, found.variant);
     },
-    [localProducts, handleScan, showScanFeedback]
+    [localProducts, addVariantToCart, showScanFeedback]
   );
+
+  const handleProductSelectedFromSearch = (product) => {
+    setSuggestions([]);
+    if (!product.variants || product.variants.length === 0) {
+      showScanFeedback('error', 'No variants found for this product');
+      return;
+    }
+    if (product.variants.length === 1 && product.variants[0].stock > 0) {
+      addVariantToCart(product, product.variants[0]);
+      return;
+    }
+    setSizePickerModal(product);
+  };
 
   const handleDuplicateIncreaseQty = () => {
     if (!duplicateModal) return;
     updateQuantity(duplicateModal.existingIdx, cartItems[duplicateModal.existingIdx].quantity + 1);
-    showScanFeedback('success', `+1 qty: ${duplicateModal.product.name}`);
+    showScanFeedback(
+      'success',
+      `+1 qty: ${duplicateModal.product.name} (${duplicateModal.variant.size})`
+    );
     setDuplicateModal(null);
   };
 
   const handleDuplicateNewRow = () => {
     if (!duplicateModal) return;
-    const p = duplicateModal.product;
+    const { product, variant } = duplicateModal;
     setCartItems((prev) => [
       ...prev,
-      {
-        productId: p.id + '_' + Date.now(),
-        name: p.name,
-        price: p.price,
-        quantity: 1,
-        itemDiscount: 0,
-        total: p.price,
-        sku: p.sku || '',
-        barcode: p.barcode || '',
-        stock: p.quantity || 0,
-        _originalId: p.id,
-      },
+      { ...buildCartItem(product, variant), variantId: variant.id + '_' + Date.now() },
     ]);
-    showScanFeedback('success', `New row: ${p.name}`);
+    showScanFeedback('success', `New row: ${product.name} (${variant.size})`);
     setDuplicateModal(null);
   };
-
-  const handleProductCreated = useCallback(
-    (product) => {
-      setCreateProductModal(null);
-      setLocalProducts((prev) => {
-        const u = [...prev, product];
-        saveProductsToCache(u);
-        return u;
-      });
-      apiCache.current = {};
-      setCartItems((prev) => [
-        ...prev,
-        {
-          productId: product.id,
-          name: product.name,
-          price: product.price,
-          quantity: 1,
-          itemDiscount: 0,
-          total: product.price,
-          sku: product.sku || '',
-          barcode: product.barcode || '',
-          stock: product.quantity || 0,
-        },
-      ]);
-      showScanFeedback('success', `Created & added: ${product.name}`);
-      setTimeout(refreshProductCache, 1000);
-    },
-    [showScanFeedback]
-  ); // eslint-disable-line
 
   const updateQuantity = (idx, qty) => {
     const item = cartItems[idx];
@@ -1470,8 +1173,10 @@ export default function EmployeeBillingPage() {
       createdAt: now,
       synced: false,
       items: cartItems.map((it) => ({
-        productId: it._originalId || it.productId,
+        productId: it.productId,
+        variantId: it.variantId, // ← variant-aware
         name: it.name,
+        size: it.size, // ← size label
         price: it.price,
         quantity: it.quantity,
         discount: it.itemDiscount || 0,
@@ -1509,7 +1214,8 @@ export default function EmployeeBillingPage() {
           body: JSON.stringify({
             billId: billNumber,
             items: cartItems.map((it) => ({
-              productId: it._originalId || it.productId,
+              productId: it.productId,
+              variantId: it.variantId, // ← per-variant deduct
               quantity: it.quantity,
             })),
           }),
@@ -1521,13 +1227,9 @@ export default function EmployeeBillingPage() {
       clearCart();
       triggerSync();
 
-      // ── PRINT (QZ Tray → browser fallback) ─────────────────
       setTimeout(async () => {
         const result = await printBillAuto(billData, settings, printerName);
         setLastPrintMethod(result.method);
-        if (!result.ok) {
-          console.warn('Print failed:', result.error);
-        }
       }, 400);
 
       if (activeTab === 'history') loadHistory(1);
@@ -1539,9 +1241,7 @@ export default function EmployeeBillingPage() {
     }
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Sync
-  // ─────────────────────────────────────────────────────────────
+  // ── Sync ──────────────────────────────────────────────────────
   const triggerSync = useCallback(() => {
     clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(runSync, 1500);
@@ -1589,9 +1289,6 @@ export default function EmployeeBillingPage() {
     setQueueCount(c);
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Merged history
-  // ─────────────────────────────────────────────────────────────
   const mergedHistoryBills = () => {
     const dbSet = new Set(historyBills.map((b) => b.billNumber));
     const unsyncedLocal = localBills.filter((b) => !dbSet.has(b.billNumber));
@@ -1610,7 +1307,6 @@ export default function EmployeeBillingPage() {
       ? `GST (CGST ${settings.cgst}% + SGST ${settings.sgst}%)`
       : `Tax (${settings?.taxPercent || 0}%)`;
 
-  // ─── QZ status indicator config ──────────────────────────────
   const qzIndicator = {
     connected: {
       cls: 'bg-green-50 text-green-700 border-green-200',
@@ -1633,9 +1329,7 @@ export default function EmployeeBillingPage() {
     label: 'Browser Print',
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Permission gate
-  // ─────────────────────────────────────────────────────────────
+  // ─── Permission gate ──────────────────────────────────────────
   if (hasPermission === null) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1643,7 +1337,6 @@ export default function EmployeeBillingPage() {
       </div>
     );
   }
-
   if (!hasPermission) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
@@ -1673,12 +1366,11 @@ export default function EmployeeBillingPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Receipt size={20} className="text-blue-500" />
-            <span className="font-bold text-slate-800 text-base tracking-tight">POS Billing</span>
+            <span className="font-bold text-slate-800 text-base">POS Billing</span>
             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">
               EMPLOYEE
             </span>
           </div>
-
           <div className="flex items-center bg-slate-100 rounded-lg p-0.5 ml-2">
             <button
               onClick={() => setActiveTab('billing')}
@@ -1699,25 +1391,20 @@ export default function EmployeeBillingPage() {
             </button>
           </div>
         </div>
-
         <div className="flex items-center gap-2">
           {!isOnline && (
             <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-1 rounded-lg font-semibold border border-orange-200">
               ⚡ Offline — {localProducts.length} cached
             </span>
           )}
-
-          {/* ── QZ STATUS + PRINT SETTINGS BUTTON (NEW) ── */}
           <button
             onClick={() => setShowPrintSettings(true)}
             className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg font-medium border transition-all ${qzIndicator.cls}`}
-            title="Print settings"
           >
             <span className={`w-2 h-2 rounded-full flex-shrink-0 ${qzIndicator.dot}`} />
             {qzIndicator.label}
             <Settings size={11} />
           </button>
-
           {printerName && (
             <span
               className="hidden md:flex items-center gap-1 text-[10px] text-slate-400 border border-slate-200 px-2 py-1.5 rounded-lg bg-slate-50 max-w-[120px] truncate"
@@ -1726,7 +1413,6 @@ export default function EmployeeBillingPage() {
               <Printer size={10} /> {printerName}
             </span>
           )}
-
           <button
             onClick={runSync}
             disabled={syncing || queueCount === 0}
@@ -1735,148 +1421,54 @@ export default function EmployeeBillingPage() {
             <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
             {queueCount > 0 ? `${queueCount} unsynced` : 'Synced'}
           </button>
-
           <div
             className={`flex items-center gap-1 text-xs font-medium px-2 py-1.5 rounded-lg ${isOnline ? 'text-green-600 bg-green-50' : 'text-red-500 bg-red-50'}`}
           >
             {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
             {isOnline ? 'Online' : 'Offline'}
           </div>
-
           <button
             onClick={toggleFullscreen}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors"
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 border border-slate-200"
           >
             {isFullscreen ? <Minimize size={15} /> : <Maximize size={15} />}
           </button>
         </div>
       </div>
 
-      {/* ── CONTENT ─────────────────────────────────────────────── */}
       {activeTab === 'billing' ? (
         <div className="flex flex-1 overflow-hidden">
           {/* LEFT */}
           <div className="flex flex-col w-full lg:w-[58%] xl:w-[62%] border-r border-slate-200 bg-white overflow-hidden">
-            {/* Input area */}
             <div className="p-4 border-b border-slate-100 space-y-2">
               <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
-                  <button
-                    onClick={() => setScanMode(true)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${scanMode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
-                    <ScanLine size={12} /> Scanner
-                  </button>
-                  <button
-                    onClick={() => {
-                      setScanMode(false);
-                      setTimeout(() => searchRef.current?.focus(), 50);
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${!scanMode ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
-                    <Search size={12} /> Search
-                  </button>
-                </div>
-
+                <p className="text-xs text-slate-500 font-medium">
+                  Scan barcode <span className="text-slate-300 mx-1">or</span> type to search
+                </p>
                 {lastScanFeedback && (
                   <span
-                    className={`text-xs font-medium px-3 py-1 rounded-full transition-all ${lastScanFeedback.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
+                    className={`text-xs font-medium px-3 py-1 rounded-full ${lastScanFeedback.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
                   >
                     {lastScanFeedback.message}
                   </span>
                 )}
-
                 <div className="text-[10px] text-slate-400">
                   {localProducts.length} products cached
                 </div>
               </div>
-
-              {scanMode && (
-                <BarcodeInput
-                  onScan={handleBarcodeScanned}
-                  disabled={
-                    !!duplicateModal ||
-                    !!createProductModal ||
-                    !!showPrintSettings ||
-                    activeTab !== 'billing'
-                  }
-                />
-              )}
-
-              {!scanMode && (
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    {searchLoading ? (
-                      <div className="w-4 h-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
-                    ) : (
-                      <Search size={15} />
-                    )}
-                  </div>
-                  <input
-                    ref={searchRef}
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={handleSearchKeyDown}
-                    onFocus={() => suggestions.length && setShowSuggestions(true)}
-                    onBlur={() => setTimeout(() => setShowSuggestions(false), 180)}
-                    placeholder={
-                      isOnline
-                        ? 'Type product name / SKU / barcode…'
-                        : '🔌 Offline — searching local cache…'
-                    }
-                    className="w-full pl-9 pr-20 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent placeholder:text-slate-400"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-slate-300">
-                    <Barcode size={14} />
-                    <span className="text-[10px] font-mono">TYPE</span>
-                  </div>
-
-                  {showSuggestions && suggestions.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full z-40 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden mt-1">
-                      {suggestions.map((p, i) => (
-                        <button
-                          key={p.id}
-                          onMouseDown={() => addToCart(p)}
-                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-blue-50 ${i === activeSuggIdx ? 'bg-blue-50' : ''} ${i !== 0 ? 'border-t border-slate-100' : ''}`}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">{p.name}</p>
-                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              {p.sku && (
-                                <span className="text-[10px] text-slate-400 font-mono">
-                                  SKU: {p.sku}
-                                </span>
-                              )}
-                              {p.barcode && (
-                                <span className="text-[10px] text-slate-400 font-mono">
-                                  <Barcode size={9} className="inline" />
-                                  {p.barcode}
-                                </span>
-                              )}
-                              <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${p.quantity > 10 ? 'bg-green-100 text-green-700' : p.quantity > 0 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}
-                              >
-                                {p.quantity > 0 ? `${p.quantity} in stock` : 'Out of stock'}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-right flex-shrink-0">
-                            <p className="text-sm font-bold text-slate-800">{fmt(p.price)}</p>
-                            {p.mrp > p.price && (
-                              <p className="text-[10px] text-slate-400 line-through">
-                                {fmt(p.mrp)}
-                              </p>
-                            )}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <CombinedInput
+                onScan={handleBarcodeScanned}
+                onSearch={handleSearch}
+                disabled={
+                  !!duplicateModal ||
+                  !!sizePickerModal ||
+                  !!showPrintSettings ||
+                  activeTab !== 'billing'
+                }
+                searchResults={suggestions}
+                onSelectProduct={handleProductSelectedFromSearch}
+                searchLoading={searchLoading}
+              />
             </div>
 
             {/* Cart */}
@@ -1887,51 +1479,31 @@ export default function EmployeeBillingPage() {
                   <div>
                     <p className="font-medium text-slate-500">Cart is empty</p>
                     <p className="text-sm text-slate-400 mt-1">
-                      {scanMode
-                        ? 'Scan a product barcode to add it'
-                        : 'Search or type a product name'}
+                      Scan a barcode or search a product name
                     </p>
                   </div>
-                  {scanMode ? (
-                    <div className="flex items-center gap-2 text-xs bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                      <ScanLine size={12} className="text-blue-500" />
-                      <span className="text-blue-700">
-                        Scanner is ready — barcode input is always focused
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 text-xs bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                      <Zap size={12} className="text-blue-500" />
-                      <span className="text-blue-700">
-                        Press{' '}
-                        <kbd className="bg-white border border-blue-300 rounded px-1 font-mono text-[10px]">
-                          Enter
-                        </kbd>{' '}
-                        to add first result
-                      </span>
-                    </div>
-                  )}
                 </div>
               ) : (
                 cartItems.map((item, idx) => (
                   <div
-                    key={item.productId}
+                    key={item.variantId}
                     className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow"
                   >
                     <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500 flex-shrink-0">
                       {idx + 1}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-slate-500">{fmt(item.price)} each</span>
-                        {item.barcode && (
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            <Barcode size={9} className="inline mr-0.5" />
-                            {item.barcode}
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
+                        {item.size && (
+                          <span className="flex-shrink-0 inline-flex items-center justify-center w-8 h-6 bg-blue-600 text-white rounded text-xs font-bold">
+                            {item.size}
                           </span>
                         )}
-                        {item.stock !== undefined && item.stock <= 10 && (
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-xs text-slate-500">{fmt(item.price)} each</span>
+                        {item.stock !== undefined && item.stock <= 5 && (
                           <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 rounded-full">
                             Low: {item.stock}
                           </span>
@@ -1998,7 +1570,6 @@ export default function EmployeeBillingPage() {
                 ))
               )}
             </div>
-
             {cartItems.length > 0 && (
               <div className="p-3 border-t border-slate-100 flex-shrink-0">
                 <button
@@ -2014,7 +1585,6 @@ export default function EmployeeBillingPage() {
           {/* RIGHT */}
           <div className="flex flex-col w-full lg:w-[42%] xl:w-[38%] bg-white overflow-y-auto">
             <div className="flex-1 p-4 space-y-4">
-              {/* Summary */}
               <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
                   Bill Summary
@@ -2062,7 +1632,6 @@ export default function EmployeeBillingPage() {
                 </div>
               </div>
 
-              {/* Payment */}
               <div>
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                   Payment Mode
@@ -2081,7 +1650,6 @@ export default function EmployeeBillingPage() {
                 </div>
               </div>
 
-              {/* Note */}
               <div>
                 <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                   Note
@@ -2095,7 +1663,6 @@ export default function EmployeeBillingPage() {
                 />
               </div>
 
-              {/* Print method indicator (NEW) */}
               <div
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border ${qzStatus === 'connected' && printerName ? 'bg-green-50 border-green-200 text-green-700' : 'bg-slate-50 border-slate-200 text-slate-500'}`}
               >
@@ -2106,7 +1673,7 @@ export default function EmployeeBillingPage() {
                   </>
                 ) : (
                   <>
-                    <span>Will use browser print dialog</span>
+                    <span>Browser print dialog</span>
                     <button
                       onClick={() => setShowPrintSettings(true)}
                       className="ml-auto underline hover:text-blue-600"
@@ -2118,7 +1685,6 @@ export default function EmployeeBillingPage() {
               </div>
             </div>
 
-            {/* Complete button */}
             <div className="p-4 border-t border-slate-200 flex-shrink-0">
               <button
                 onClick={completeBill}
@@ -2140,14 +1706,14 @@ export default function EmployeeBillingPage() {
                 {qzStatus === 'connected' && printerName
                   ? '⚡ Prints directly to thermal printer'
                   : isOnline
-                    ? 'Saves & syncs instantly · Opens print dialog'
+                    ? 'Saves & syncs instantly'
                     : '⚡ Saves offline · Syncs when online'}
               </p>
             </div>
           </div>
         </div>
       ) : (
-        /* ══════════════════ HISTORY TAB ══════════════════ */
+        /* ── HISTORY TAB ── */
         <div className="flex flex-col flex-1 overflow-hidden bg-slate-50">
           <div className="bg-white border-b border-slate-200 px-5 py-4 flex-shrink-0">
             <div className="flex items-center gap-4 mb-4">
@@ -2184,7 +1750,7 @@ export default function EmployeeBillingPage() {
                 <button
                   onClick={() => loadHistory(1)}
                   disabled={historyLoading}
-                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 border border-slate-200 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 border border-slate-200"
                 >
                   <RefreshCw size={12} className={historyLoading ? 'animate-spin' : ''} /> Refresh
                 </button>
@@ -2192,7 +1758,7 @@ export default function EmployeeBillingPage() {
                   onClick={() => setShowFilters((v) => !v)}
                   className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border transition-colors ${showFilters ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-slate-500 border-slate-200 hover:bg-slate-100'}`}
                 >
-                  <Filter size={12} /> Filters
+                  <Filter size={12} /> Filters{' '}
                   <ChevronDown
                     size={11}
                     className={`transition-transform ${showFilters ? 'rotate-180' : ''}`}
@@ -2200,7 +1766,6 @@ export default function EmployeeBillingPage() {
                 </button>
               </div>
             </div>
-
             <div className="relative">
               <Search
                 size={14}
@@ -2214,7 +1779,6 @@ export default function EmployeeBillingPage() {
                 className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
               />
             </div>
-
             {showFilters && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
                 <div>
@@ -2295,7 +1859,6 @@ export default function EmployeeBillingPage() {
                         <div className="flex items-center gap-3 p-3.5">
                           <div
                             className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isSynced ? 'bg-green-400' : 'bg-orange-400 animate-pulse'}`}
-                            title={isSynced ? 'Synced' : 'Pending sync'}
                           />
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -2329,8 +1892,7 @@ export default function EmployeeBillingPage() {
                             <p className="font-bold text-slate-800 text-sm">{fmt(bill.total)}</p>
                             <button
                               onClick={() => printBillAuto(bill, settings, printerName)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                              title="Print"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50"
                             >
                               <Printer size={14} />
                             </button>
@@ -2338,14 +1900,12 @@ export default function EmployeeBillingPage() {
                               onClick={() =>
                                 setExpandedBill(isExpanded ? null : bill.id || bill.localId)
                               }
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                              title="View items"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
                             >
                               <Eye size={14} />
                             </button>
                           </div>
                         </div>
-
                         {isExpanded && bill.items?.length > 0 && (
                           <div className="border-t border-slate-100 px-4 pb-4 pt-3">
                             <div className="bg-slate-50 rounded-lg overflow-hidden">
@@ -2354,6 +1914,9 @@ export default function EmployeeBillingPage() {
                                   <tr className="border-b border-slate-200">
                                     <th className="text-left py-2 px-3 text-slate-500 font-medium">
                                       Item
+                                    </th>
+                                    <th className="text-left py-2 px-3 text-slate-500 font-medium">
+                                      Size
                                     </th>
                                     <th className="text-center py-2 px-3 text-slate-500 font-medium">
                                       Qty
@@ -2375,6 +1938,15 @@ export default function EmployeeBillingPage() {
                                       <td className="py-2 px-3 text-slate-700 font-medium">
                                         {item.name}
                                       </td>
+                                      <td className="py-2 px-3">
+                                        {item.size ? (
+                                          <span className="inline-flex items-center justify-center w-8 h-6 bg-blue-600 text-white rounded text-xs font-bold">
+                                            {item.size}
+                                          </span>
+                                        ) : (
+                                          '—'
+                                        )}
+                                      </td>
                                       <td className="py-2 px-3 text-center text-slate-600">
                                         {item.quantity}
                                       </td>
@@ -2391,7 +1963,7 @@ export default function EmployeeBillingPage() {
                                   {bill.discount > 0 && (
                                     <tr>
                                       <td
-                                        colSpan={3}
+                                        colSpan={4}
                                         className="py-1.5 px-3 text-slate-500 text-right"
                                       >
                                         Discount
@@ -2404,7 +1976,7 @@ export default function EmployeeBillingPage() {
                                   {bill.taxAmount > 0 && (
                                     <tr>
                                       <td
-                                        colSpan={3}
+                                        colSpan={4}
                                         className="py-1.5 px-3 text-slate-500 text-right"
                                       >
                                         Tax
@@ -2416,7 +1988,7 @@ export default function EmployeeBillingPage() {
                                   )}
                                   <tr>
                                     <td
-                                      colSpan={3}
+                                      colSpan={4}
                                       className="py-2 px-3 text-right font-bold text-slate-700"
                                     >
                                       Grand Total
@@ -2433,7 +2005,6 @@ export default function EmployeeBillingPage() {
                       </div>
                     );
                   })}
-
                   {mergedHistoryBills().length === 0 && !historyLoading && (
                     <div className="flex flex-col items-center justify-center h-64 gap-3 text-slate-400">
                       <Receipt size={40} strokeWidth={1} />
@@ -2442,7 +2013,6 @@ export default function EmployeeBillingPage() {
                     </div>
                   )}
                 </div>
-
                 {historyTotal > 50 && (
                   <div className="flex items-center justify-center gap-3 mt-6">
                     <button
@@ -2507,13 +2077,12 @@ export default function EmployeeBillingPage() {
               </div>
               <div>
                 <h3 className="font-bold text-slate-800">Already in cart</h3>
-                <p className="text-sm text-slate-500">{duplicateModal.product.name}</p>
-                {duplicateModal.product.barcode && (
-                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                    <Barcode size={9} className="inline mr-0.5" />
-                    {duplicateModal.product.barcode}
-                  </p>
-                )}
+                <p className="text-sm text-slate-500">
+                  {duplicateModal.product.name}{' '}
+                  <span className="font-semibold text-blue-600">
+                    ({duplicateModal.variant.size})
+                  </span>
+                </p>
               </div>
             </div>
             <div className="space-y-2">
@@ -2540,25 +2109,25 @@ export default function EmployeeBillingPage() {
         </div>
       )}
 
-      {/* ── CREATE PRODUCT MODAL ──────────────────────────────── */}
-      {createProductModal && (
-        <CreateProductModal
-          barcode={createProductModal.barcode}
-          onClose={() => setCreateProductModal(null)}
-          onCreated={handleProductCreated}
-          settings={settings}
+      {/* ── SIZE PICKER MODAL ──────────────────────────────────── */}
+      {sizePickerModal && (
+        <SizePickerModal
+          product={sizePickerModal}
+          onSelect={(product, variant) => {
+            setSizePickerModal(null);
+            addVariantToCart(product, variant);
+          }}
+          onClose={() => setSizePickerModal(null)}
         />
       )}
 
-      {/* ── PRINT SETTINGS MODAL (NEW) ────────────────────────── */}
+      {/* ── PRINT SETTINGS MODAL ─────────────────────────────── */}
       {showPrintSettings && (
         <PrintSettingsModal
           onClose={() => setShowPrintSettings(false)}
           printerName={printerName}
           onPrinterChange={handlePrinterChange}
           qzStatus={qzStatus}
-          settings={settings}
-          onTestPrint={() => {}}
         />
       )}
     </div>
