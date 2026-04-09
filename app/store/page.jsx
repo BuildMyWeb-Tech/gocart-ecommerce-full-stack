@@ -1,5 +1,5 @@
-// app/store/page.jsx
 'use client';
+// app/store/page.jsx — Feature 10: added billing revenue, top variants, low stock variants
 import Loading from '@/components/Loading';
 import { useAuth } from '@clerk/nextjs';
 import axios from 'axios';
@@ -19,6 +19,10 @@ import {
   Package,
   Layers,
   CheckCircle,
+  Receipt,
+  AlertTriangle,
+  BarChart2,
+  Zap,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -39,7 +43,6 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
-// ── Pie chart colours ─────────────────────────────────────────────
 const PIE_COLORS = {
   Delivered: '#22c55e',
   Pending: '#f59e0b',
@@ -48,8 +51,7 @@ const PIE_COLORS = {
   Cancelled: '#ef4444',
 };
 
-// ── Stat card ─────────────────────────────────────────────────────
-function StatCard({ title, value, icon: Icon, color }) {
+function StatCard({ title, value, icon: Icon, color, sub }) {
   const colorMap = {
     blue: {
       bg: 'bg-blue-50',
@@ -117,6 +119,12 @@ function StatCard({ title, value, icon: Icon, color }) {
       border: 'border-sky-100',
       val: 'text-sky-700',
     },
+    cyan: {
+      bg: 'bg-cyan-50',
+      icon: 'bg-cyan-100 text-cyan-600',
+      border: 'border-cyan-100',
+      val: 'text-cyan-700',
+    },
   };
   const c = colorMap[color] || colorMap.slate;
   return (
@@ -127,14 +135,14 @@ function StatCard({ title, value, icon: Icon, color }) {
       <div>
         <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{title}</p>
         <p className={`text-2xl font-bold mt-0.5 ${c.val}`}>{value}</p>
+        {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
       </div>
     </div>
   );
 }
 
-// ── Chart tooltip ─────────────────────────────────────────────────
 const RevenueTooltip = ({ active, payload, label }) => {
-  if (active && payload?.length) {
+  if (active && payload?.length)
     return (
       <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-xs">
         <p className="font-semibold text-slate-700 mb-1">{label}</p>
@@ -145,15 +153,12 @@ const RevenueTooltip = ({ active, payload, label }) => {
         ))}
       </div>
     );
-  }
   return null;
 };
 
-// ── Main Dashboard ────────────────────────────────────────────────
 export default function Dashboard() {
   const { getToken } = useAuth();
   const router = useRouter();
-
   const [loading, setLoading] = useState(true);
   const [chartTab, setChartTab] = useState('revenue');
   const [dash, setDash] = useState({
@@ -170,14 +175,17 @@ export default function Dashboard() {
     cancelled: 0,
     dailyData: [],
     ratings: [],
+    // ── Feature 10 additions ──────────────────────────────
+    totalBills: 0,
+    totalBillingRevenue: 0,
+    todayBills: 0,
+    todayBillingRevenue: 0,
+    topVariants: [],
+    lowStockVariants: [],
   });
 
-  // ── Unified auth header: employee JWT first, then Clerk ──────────
   const getAuthHeader = async () => {
-    const empToken =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('employeeToken')
-        : null;
+    const empToken = typeof window !== 'undefined' ? localStorage.getItem('employeeToken') : null;
     if (empToken) return { Authorization: `Bearer ${empToken}` };
     const token = await getToken();
     return { Authorization: `Bearer ${token}` };
@@ -202,11 +210,9 @@ export default function Dashboard() {
 
   if (loading) return <Loading />;
 
-  // ── Derived values ────────────────────────────────────────────────
   const avgRating = dash.ratings.length
     ? (dash.ratings.reduce((s, r) => s + r.rating, 0) / dash.ratings.length).toFixed(1)
     : '—';
-
   const conversionRate =
     dash.totalOrders > 0 ? ((dash.delivered / dash.totalOrders) * 100).toFixed(1) : '0.0';
 
@@ -230,7 +236,7 @@ export default function Dashboard() {
 
   return (
     <div className="text-slate-600 pb-28 space-y-8">
-      {/* ── Header ───────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Seller Dashboard</h1>
@@ -246,49 +252,90 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* ── Stat Cards ───────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        <StatCard
-          title="Total Products"
-          value={dash.totalProducts}
-          icon={ShoppingBasket}
-          color="blue"
-        />
-        <StatCard
-          title="Total Categories"
-          value={dash.totalCategories}
-          icon={Layers}
-          color="indigo"
-        />
-        <StatCard
-          title="Total Orders"
-          value={dash.totalOrders}
-          icon={ShoppingCart}
-          color="purple"
-        />
-        <StatCard title="Total Customers" value={dash.totalCustomers} icon={Users} color="teal" />
-        <StatCard
-          title="Total Revenue"
-          value={`₹${dash.revenue.toLocaleString('en-IN')}`}
-          icon={IndianRupee}
-          color="green"
-        />
-        <StatCard title="Pending" value={dash.pending} icon={Clock} color="amber" />
-        <StatCard title="Processing" value={dash.processing} icon={Package} color="sky" />
-        <StatCard title="Shipped" value={dash.shipped} icon={Truck} color="orange" />
-        <StatCard title="Delivered" value={dash.delivered} icon={CheckCircle2} color="green" />
-        <StatCard title="Cancelled" value={dash.cancelled} icon={XCircle} color="red" />
-        <StatCard
-          title="Conversion Rate"
-          value={`${conversionRate}%`}
-          icon={TrendingUp}
-          color="pink"
-        />
+      {/* ── POS Billing Stats (Feature 10) ─────────────────────── */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+          <Receipt size={14} /> POS Billing
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <StatCard
+            title="Total Bills"
+            value={dash.totalBills}
+            icon={Receipt}
+            color="indigo"
+            sub="All time"
+          />
+          <StatCard
+            title="Billing Revenue"
+            value={`₹${(dash.totalBillingRevenue || 0).toLocaleString('en-IN')}`}
+            icon={IndianRupee}
+            color="green"
+            sub="All time"
+          />
+          <StatCard
+            title="Today's Bills"
+            value={dash.todayBills}
+            icon={Zap}
+            color="amber"
+            sub="Today"
+          />
+          <StatCard
+            title="Today's Revenue"
+            value={`₹${(dash.todayBillingRevenue || 0).toLocaleString('en-IN')}`}
+            icon={TrendingUp}
+            color="teal"
+            sub="Today"
+          />
+        </div>
       </div>
 
-      {/* ── Charts Row ───────────────────────────────────────── */}
+      {/* ── Order Stats ────────────────────────────────────────── */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+          <ShoppingCart size={14} /> Orders & Products
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          <StatCard
+            title="Total Products"
+            value={dash.totalProducts}
+            icon={ShoppingBasket}
+            color="blue"
+          />
+          <StatCard
+            title="Total Categories"
+            value={dash.totalCategories}
+            icon={Layers}
+            color="indigo"
+          />
+          <StatCard
+            title="Total Orders"
+            value={dash.totalOrders}
+            icon={ShoppingCart}
+            color="purple"
+          />
+          <StatCard title="Total Customers" value={dash.totalCustomers} icon={Users} color="teal" />
+          <StatCard
+            title="Total Revenue"
+            value={`₹${dash.revenue.toLocaleString('en-IN')}`}
+            icon={IndianRupee}
+            color="green"
+          />
+          <StatCard title="Pending" value={dash.pending} icon={Clock} color="amber" />
+          <StatCard title="Processing" value={dash.processing} icon={Package} color="sky" />
+          <StatCard title="Shipped" value={dash.shipped} icon={Truck} color="orange" />
+          <StatCard title="Delivered" value={dash.delivered} icon={CheckCircle2} color="green" />
+          <StatCard title="Cancelled" value={dash.cancelled} icon={XCircle} color="red" />
+          <StatCard
+            title="Conversion Rate"
+            value={`${conversionRate}%`}
+            icon={TrendingUp}
+            color="pink"
+          />
+        </div>
+      </div>
+
+      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Line / Bar Chart */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <h3 className="font-semibold text-slate-800">Trends (Last 14 Days)</h3>
@@ -297,20 +344,13 @@ export default function Dashboard() {
                 <button
                   key={tab}
                   onClick={() => setChartTab(tab)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    chartTab === tab
-                      ? tab === 'revenue'
-                        ? 'bg-green-600 text-white'
-                        : 'bg-indigo-600 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${chartTab === tab ? (tab === 'revenue' ? 'bg-green-600 text-white' : 'bg-indigo-600 text-white') : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                 >
                   {tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </button>
               ))}
             </div>
           </div>
-
           {chartData.length === 0 ? (
             <div className="h-60 flex items-center justify-center text-slate-400 text-sm">
               No data for the last 14 days
@@ -346,7 +386,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Pie Chart */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
           <h3 className="font-semibold text-slate-800 mb-5">Order Distribution</h3>
           {pieData.length === 0 ? (
@@ -392,7 +431,103 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Orders by Status Bar Chart ───────────────────────── */}
+      {/* ── Top Variants (Feature 10) ───────────────────────────── */}
+      {dash.topVariants && dash.topVariants.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="flex justify-between items-center p-5 border-b border-slate-100">
+            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+              <BarChart2 size={18} className="text-indigo-500" /> Top Selling Variants
+            </h2>
+            <span className="bg-indigo-100 text-indigo-700 text-xs font-medium px-2.5 py-1 rounded-full">
+              By qty sold
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Product</th>
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Size</th>
+                  <th className="text-right px-5 py-3 text-slate-500 font-medium">Qty Sold</th>
+                  <th className="text-right px-5 py-3 text-slate-500 font-medium">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dash.topVariants.slice(0, 8).map((v, i) => (
+                  <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60">
+                    <td className="px-5 py-3 font-medium text-slate-800">{v.productName}</td>
+                    <td className="px-5 py-3">
+                      <span className="inline-flex items-center justify-center w-10 h-7 bg-indigo-600 text-white rounded-lg text-xs font-bold">
+                        {v.size}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right font-semibold text-slate-700">
+                      {v.totalQty}
+                    </td>
+                    <td className="px-5 py-3 text-right font-semibold text-green-700">
+                      ₹{Number(v.totalRevenue || 0).toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Low Stock Variants (Feature 10) ────────────────────── */}
+      {dash.lowStockVariants && dash.lowStockVariants.length > 0 && (
+        <div className="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+          <div className="flex justify-between items-center p-5 border-b border-amber-100 bg-amber-50">
+            <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+              <AlertTriangle size={18} className="text-amber-500" /> Low Stock Variants
+            </h2>
+            <span className="bg-red-100 text-red-700 text-xs font-medium px-2.5 py-1 rounded-full">
+              {dash.lowStockVariants.length} variants need attention
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Product</th>
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Size</th>
+                  <th className="text-right px-5 py-3 text-slate-500 font-medium">Stock Left</th>
+                  <th className="text-right px-5 py-3 text-slate-500 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dash.lowStockVariants.slice(0, 10).map((v, i) => (
+                  <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60">
+                    <td className="px-5 py-3 font-medium text-slate-800">{v.productName}</td>
+                    <td className="px-5 py-3">
+                      <span className="inline-flex items-center justify-center w-10 h-7 bg-slate-600 text-white rounded-lg text-xs font-bold">
+                        {v.size}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <span
+                        className={`font-bold text-base ${v.stock === 0 ? 'text-red-600' : 'text-amber-600'}`}
+                      >
+                        {v.stock}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <span
+                        className={`text-xs px-2 py-1 rounded-full font-medium ${v.stock === 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}
+                      >
+                        {v.stock === 0 ? 'Out of stock' : 'Low stock'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Orders by Status Bar Chart */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
         <h3 className="font-semibold text-slate-800 mb-5">Orders by Status</h3>
         <ResponsiveContainer width="100%" height={200}>
@@ -410,7 +545,7 @@ export default function Dashboard() {
         </ResponsiveContainer>
       </div>
 
-      {/* ── Quick Stats ──────────────────────────────────────── */}
+      {/* Quick Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center gap-4">
           <div className="bg-amber-100 rounded-xl p-3">
@@ -446,7 +581,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Recent Reviews ───────────────────────────────────── */}
+      {/* Recent Reviews */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex justify-between items-center p-5 border-b border-slate-100">
           <h2 className="text-lg font-semibold text-slate-800">Recent Customer Reviews</h2>

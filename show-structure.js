@@ -7,6 +7,7 @@ function showTree(dir, indent = "") {
         if (item === "node_modules") continue; // Skip node_modules
                 if (item === ".git") continue; // Skip node_modules
                                 if (item === "chunks") continue; // Skip node_modules
+                                    if (item === "object") continue; // Skip node_modules
 
 
         const fullPath = path.join(dir, item);

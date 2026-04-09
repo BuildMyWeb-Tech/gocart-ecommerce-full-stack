@@ -1,9 +1,9 @@
 // app/api/store/billing/route.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Billing sync API — supports Clerk owner + Employee JWT
-//
-// POST /api/store/billing  → sync offline bills + deduct stock atomically
-// GET  /api/store/billing  → paginated bill history with stats
+// Feature 10 update:
+//   - BillItem now stores variantId + size
+//   - Stock deducted from ProductVariant.stock (per-variant)
+//   - Product.quantity + Inventory.quantity kept in sync (aggregate)
 // ─────────────────────────────────────────────────────────────────────────────
 import prisma from '@/lib/prisma';
 import { getAuth } from '@clerk/nextjs/server';
@@ -11,22 +11,15 @@ import { NextResponse } from 'next/server';
 import authSeller from '@/middlewares/authSeller';
 import { verifyEmployeeToken, hasPermission } from '@/middlewares/authEmployee';
 
-/**
- * Resolves storeId for both Clerk (owner) and Employee JWT sessions.
- */
 async function resolveStoreId(request) {
-  // ── 1. Employee JWT ───────────────────────────────────────────
   try {
     const employee = verifyEmployeeToken(request);
     if (employee?.storeId) {
-      if (!hasPermission(employee, 'billing')) {
+      if (!hasPermission(employee, 'billing'))
         return { error: 'No billing permission', status: 403 };
-      }
-      return { storeId: employee.storeId, source: 'employee', employeeId: employee.id };
+      return { storeId: employee.storeId, source: 'employee' };
     }
   } catch (_) {}
-
-  // ── 2. Clerk store owner ──────────────────────────────────────
   try {
     const { userId } = getAuth(request);
     if (userId) {
@@ -34,27 +27,24 @@ async function resolveStoreId(request) {
       if (storeId) return { storeId, source: 'owner' };
     }
   } catch (_) {}
-
   return { error: 'Unauthorized', status: 401 };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST — sync bills + deduct stock atomically
-// Body: array of bill objects from IndexedDB queue
+// POST — sync bills array from IndexedDB queue
 // ─────────────────────────────────────────────────────────────────────────────
 export async function POST(request) {
   try {
-    const { storeId, error, status, source } = await resolveStoreId(request);
-    if (!storeId) {
+    const { storeId, error, status } = await resolveStoreId(request);
+    if (!storeId)
       return NextResponse.json({ error: error || 'Unauthorized' }, { status: status || 401 });
-    }
 
     const body = await request.json();
     const bills = Array.isArray(body) ? body : [body];
 
-    const saved = [];
-    const failed = [];
-    const skipped = [];
+    const saved = [],
+      failed = [],
+      skipped = [];
 
     for (const bill of bills) {
       try {
@@ -76,29 +66,18 @@ export async function POST(request) {
           continue;
         }
 
-        // ── Deduplication by billNumber ─────────────────────────
-        // Also check localId stored in bill.localId field to prevent
-        // re-processing the same offline bill even if billNumber differs
+        // Dedup by billNumber
         const existing = await prisma.bill.findFirst({
-          where: {
-            storeId,
-            OR: [
-              { billNumber },
-              // Store localId in note or a dedicated field if needed
-              // Using billNumber as primary dedup key is sufficient
-            ],
-          },
-          select: { id: true, billNumber: true },
+          where: { storeId, billNumber },
+          select: { id: true },
         });
-
         if (existing) {
           skipped.push({ localId, billId: existing.id, reason: 'duplicate' });
           continue;
         }
 
-        // ── Atomic: save bill + deduct stock + record sale ──────
         const created = await prisma.$transaction(async (tx) => {
-          // 1. Create the Bill record
+          // 1. Create Bill with BillItems (include variantId + size)
           const newBill = await tx.bill.create({
             data: {
               billNumber,
@@ -113,7 +92,9 @@ export async function POST(request) {
               items: {
                 create: items.map((item) => ({
                   productId: item.productId,
+                  variantId: item.variantId || null, // ← Feature 10
                   name: item.name,
+                  size: item.size || null, // ← Feature 10
                   price: Number(item.price),
                   quantity: Number(item.quantity),
                   discount: Number(item.discount || 0),
@@ -123,43 +104,74 @@ export async function POST(request) {
             },
           });
 
-          // 2. Deduct stock for each item — atomic, safe, no duplicates
+          // 2. Deduct stock per item
           for (const item of items) {
-            const productId = item.productId;
             const deductQty = Number(item.quantity);
-            if (!productId || deductQty <= 0) continue;
+            if (deductQty <= 0) continue;
 
-            // Get current inventory
-            const inv = await tx.inventory.findUnique({
-              where: { productId_storeId: { productId, storeId } },
-            });
+            if (item.variantId) {
+              // ── Variant-level stock deduction ──────────────────────────────
+              const cleanVariantId =
+                item.variantId.includes('_') && item.variantId.length > 30
+                  ? item.variantId.split('_')[0] // strip "_duplicate" suffix
+                  : item.variantId;
 
-            // Fallback to product.quantity if no inventory record
-            const product = await tx.product.findFirst({
-              where: { id: productId, storeId },
-              select: { id: true, quantity: true },
-            });
+              const variant = await tx.productVariant.findUnique({
+                where: { id: cleanVariantId },
+                select: { id: true, stock: true, productId: true },
+              });
+              if (!variant) continue;
 
-            if (!product) continue; // Product not found — skip silently
+              const newVariantStock = Math.max(0, variant.stock - deductQty);
+              await tx.productVariant.update({
+                where: { id: cleanVariantId },
+                data: { stock: newVariantStock },
+              });
 
-            const currentQty = inv?.quantity ?? product.quantity ?? 0;
-            const newQty = Math.max(0, currentQty - deductQty);
+              // Re-aggregate product.quantity from all variants
+              const allVariants = await tx.productVariant.findMany({
+                where: { productId: variant.productId },
+                select: { stock: true },
+              });
+              const totalStock = allVariants.reduce((s, v) => s + v.stock, 0);
 
-            if (inv) {
-              await tx.inventory.update({
-                where: { productId_storeId: { productId, storeId } },
-                data: { quantity: newQty },
+              await tx.product.update({
+                where: { id: variant.productId },
+                data: { quantity: totalStock, inStock: totalStock > 0 },
+              });
+              await tx.inventory.updateMany({
+                where: { productId: variant.productId, storeId },
+                data: { quantity: totalStock },
               });
             } else {
-              await tx.inventory.create({
-                data: { productId, storeId, quantity: newQty, lowStock: 10 },
+              // ── Legacy fallback: no variantId → deduct from product/inventory ─
+              const product = await tx.product.findFirst({
+                where: { id: item.productId, storeId },
+                select: { id: true, quantity: true },
+              });
+              if (!product) continue;
+
+              const inv = await tx.inventory.findUnique({
+                where: { productId_storeId: { productId: item.productId, storeId } },
+              });
+              const currentQty = inv?.quantity ?? product.quantity ?? 0;
+              const newQty = Math.max(0, currentQty - deductQty);
+
+              if (inv) {
+                await tx.inventory.update({
+                  where: { productId_storeId: { productId: item.productId, storeId } },
+                  data: { quantity: newQty },
+                });
+              } else {
+                await tx.inventory.create({
+                  data: { productId: item.productId, storeId, quantity: newQty, lowStock: 10 },
+                });
+              }
+              await tx.product.update({
+                where: { id: item.productId },
+                data: { quantity: newQty, inStock: newQty > 0 },
               });
             }
-
-            await tx.product.update({
-              where: { id: productId },
-              data: { quantity: newQty, inStock: newQty > 0 },
-            });
           }
 
           // 3. Record sale
@@ -178,7 +190,7 @@ export async function POST(request) {
 
         saved.push({ localId, billId: created.id });
       } catch (err) {
-        console.error(`Bill sync error for localId=${bill?.localId}:`, err.message);
+        console.error(`Bill sync error localId=${bill?.localId}:`, err.message);
         failed.push({ localId: bill?.localId, reason: err.message });
       }
     }
@@ -202,14 +214,13 @@ export async function POST(request) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GET — paginated bill history + summary stats
+// GET — paginated bill history + today stats
 // ─────────────────────────────────────────────────────────────────────────────
 export async function GET(request) {
   try {
     const { storeId, error, status } = await resolveStoreId(request);
-    if (!storeId) {
+    if (!storeId)
       return NextResponse.json({ error: error || 'Unauthorized' }, { status: status || 401 });
-    }
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, parseInt(searchParams.get('page') || '1'));
@@ -220,7 +231,6 @@ export async function GET(request) {
     const dateFrom = searchParams.get('dateFrom') || '';
     const dateTo = searchParams.get('dateTo') || '';
 
-    // Build where clause
     const where = {
       storeId,
       ...(search && {
@@ -247,6 +257,7 @@ export async function GET(request) {
           items: {
             include: {
               product: { select: { id: true, name: true, images: true } },
+              variant: { select: { id: true, size: true, price: true } },
             },
           },
         },
@@ -255,14 +266,8 @@ export async function GET(request) {
         take: limit,
       }),
       prisma.bill.count({ where }),
-      // Today's summary stats
       prisma.bill.aggregate({
-        where: {
-          storeId,
-          createdAt: {
-            gte: new Date(new Date().setHours(0, 0, 0, 0)),
-          },
-        },
+        where: { storeId, createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
         _sum: { total: true },
         _count: { id: true },
       }),
@@ -274,10 +279,7 @@ export async function GET(request) {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-      todayStats: {
-        count: stats._count.id,
-        revenue: stats._sum.total || 0,
-      },
+      todayStats: { count: stats._count.id, revenue: stats._sum.total || 0 },
     });
   } catch (error) {
     console.error('GET /api/store/billing error:', error);
