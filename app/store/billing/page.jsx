@@ -975,7 +975,7 @@ export default function StoreBillingPage() {
 
   // ── Search handler (called from CombinedInput) ───────────────
   const handleSearch = useCallback(
-    (query) => {
+  (query) => {
       const q = query.trim();
       if (!q) {
         setSuggestions([]);
