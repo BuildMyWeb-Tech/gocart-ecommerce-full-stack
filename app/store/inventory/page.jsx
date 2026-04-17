@@ -58,12 +58,12 @@ function EditableQty({ inv, onUpdated }) {
     try {
       setSaving(true);
       const token = await getToken();
-      const { data } = await axios.put(
-        '/api/inventory/update',
+      const { data } = await axios.post(
+        '/api/inventory',
         { productId: inv.productId, quantity: qty, lowStock },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      onUpdated(inv.productId, data.quantity, data.inventory.lowStock);
+      onUpdated(inv.productId, data.inventory.quantity, data.inventory.lowStock);
       toast.success('Stock updated');
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to update');

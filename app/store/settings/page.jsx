@@ -53,7 +53,7 @@ export default function StoreSettingsPage() {
            localStorage.getItem('token') ||
            localStorage.getItem('employeeToken') || '')
         : '';
-      const res = await fetch('/api/settings', {
+      const res = await fetch('/api/store/settings', {
         credentials: 'include',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -84,7 +84,7 @@ export default function StoreSettingsPage() {
            localStorage.getItem('token') ||
            localStorage.getItem('employeeToken') || '')
         : '';
-      const res = await fetch('/api/settings', {
+      const res = await fetch('/api/store/settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

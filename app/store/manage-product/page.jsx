@@ -165,6 +165,7 @@ function ProductRow({ product, onDelete, onVariantUpdate, lowStockThreshold }) {
   const [variants, setVariants] = useState(product.variants || []);
 
   const { getToken } = useAuth();
+const router = useRouter();
 
   const handleVariantSave = async (variantId, updates) => {
     try {
@@ -333,7 +334,7 @@ function ProductRow({ product, onDelete, onVariantUpdate, lowStockThreshold }) {
                     Click price or stock to edit inline. Barcode is hidden for security.
                   </p>
                   <button
-                    onClick={() => (window.location.href = `/store/add-product?id=${product.id}`)}
+                    onClick={() => router.push(`/store/add-product?id=${product.id}`)}
                     className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
                   >
                     <Pencil size={11} /> Edit All Variants

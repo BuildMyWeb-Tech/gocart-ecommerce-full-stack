@@ -879,7 +879,7 @@ export default function EmployeeBillingPage() {
     // Settings
     const token = getEmpToken();
     if (token)
-      fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } })
+      fetch('/api/store/settings', { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.json())
         .then((d) => setSettings(d.settings || null))
         .catch(console.error);

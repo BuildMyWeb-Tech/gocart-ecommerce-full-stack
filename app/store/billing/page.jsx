@@ -880,7 +880,7 @@ export default function StoreBillingPage() {
   // ── Init ──────────────────────────────────────────────────────
   useEffect(() => {
     const token = getStoreToken();
-    fetch('/api/settings', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    fetch('/api/store/settings', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then((r) => r.json())
       .then((d) => setSettings(d.settings || null))
       .catch(console.error);
@@ -961,7 +961,7 @@ export default function StoreBillingPage() {
   const refreshProductCache = async () => {
     try {
       const token = getStoreToken();
-      const res = await fetch('/api/store/product', {
+      const res = await fetch('/api/store/products-for-billing', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
@@ -993,7 +993,7 @@ export default function StoreBillingPage() {
           setSearchLoading(true);
           try {
             const token = getStoreToken();
-            const res = await fetch(`/api/store/product?search=${encodeURIComponent(q)}`, {
+            const res = await fetch(`/api/store/products-for-billing?search=${encodeURIComponent(q)}`, {
               headers: token ? { Authorization: `Bearer ${token}` } : {},
             });
             const data = await res.json();
