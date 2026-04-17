@@ -175,7 +175,7 @@ export async function GET(request) {
         },
         // ← Include variants (exclude barcode — not needed in list view)
         variants: {
-          select: { id: true, size: true, price: true, stock: true, productId: true },
+          select: { id: true, size: true, barcode: true, price: true, stock: true, productId: true },
           orderBy: { size: 'asc' },
         },
       },

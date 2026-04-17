@@ -879,7 +879,7 @@ export default function EmployeeBillingPage() {
     // Settings
     const token = getEmpToken();
     if (token)
-      fetch('/api/settings', { headers: { Authorization: `Bearer ${token}` } })
+      fetch('/api/store/settings', { headers: { Authorization: `Bearer ${token}` } })
         .then((r) => r.json())
         .then((d) => setSettings(d.settings || null))
         .catch(console.error);
@@ -956,11 +956,11 @@ export default function EmployeeBillingPage() {
     return () => clearTimeout(historyTimer.current);
   }, [historySearch]); // eslint-disable-line
 
-  // ── Product cache — fetch /api/store/product (includes variants) ──
+// ── Product cache — fetch shared billing API (works for store + employee) ──
   const refreshProductCache = async () => {
     try {
       const token = getEmpToken();
-      const res = await fetch('/api/store/product', {
+      const res = await fetch('/api/store/products-for-billing', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
@@ -990,7 +990,7 @@ export default function EmployeeBillingPage() {
           setSearchLoading(true);
           try {
             const token = getEmpToken();
-            const res = await fetch(`/api/store/product?search=${encodeURIComponent(q)}`, {
+            const res = await fetch(`/api/store/products-for-billing?search=${encodeURIComponent(q)}`, {
               headers: token ? { Authorization: `Bearer ${token}` } : {},
             });
             const data = await res.json();

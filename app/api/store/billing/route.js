@@ -1,9 +1,10 @@
 // app/api/store/billing/route.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Feature 10 update:
-//   - BillItem now stores variantId + size
-//   - Stock deducted from ProductVariant.stock (per-variant)
-//   - Product.quantity + Inventory.quantity kept in sync (aggregate)
+// FIXED: Removed stock deduction from here.
+// Stock is already deducted by POST /api/inventory/deduct (called immediately
+// from the frontend on bill completion, before sync runs).
+// This endpoint ONLY saves the Bill record + BillItems + Sale record.
+// Deducting here too was causing the double-stock-reduction bug.
 // ─────────────────────────────────────────────────────────────────────────────
 import prisma from '@/lib/prisma';
 import { getAuth } from '@clerk/nextjs/server';
@@ -32,6 +33,8 @@ async function resolveStoreId(request) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST — sync bills array from IndexedDB queue
+// ONLY saves Bill + BillItems + Sale. Does NOT touch stock.
+// Stock was already deducted by /api/inventory/deduct on bill completion.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function POST(request) {
   try {
@@ -66,7 +69,7 @@ export async function POST(request) {
           continue;
         }
 
-        // Dedup by billNumber
+        // Dedup — skip if this bill was already synced
         const existing = await prisma.bill.findFirst({
           where: { storeId, billNumber },
           select: { id: true },
@@ -77,7 +80,7 @@ export async function POST(request) {
         }
 
         const created = await prisma.$transaction(async (tx) => {
-          // 1. Create Bill with BillItems (include variantId + size)
+          // 1. Create Bill with BillItems
           const newBill = await tx.bill.create({
             data: {
               billNumber,
@@ -92,9 +95,9 @@ export async function POST(request) {
               items: {
                 create: items.map((item) => ({
                   productId: item.productId,
-                  variantId: item.variantId || null, // ← Feature 10
+                  variantId: item.variantId || null,
                   name: item.name,
-                  size: item.size || null, // ← Feature 10
+                  size: item.size || null,
                   price: Number(item.price),
                   quantity: Number(item.quantity),
                   discount: Number(item.discount || 0),
@@ -104,77 +107,7 @@ export async function POST(request) {
             },
           });
 
-          // 2. Deduct stock per item
-          for (const item of items) {
-            const deductQty = Number(item.quantity);
-            if (deductQty <= 0) continue;
-
-            if (item.variantId) {
-              // ── Variant-level stock deduction ──────────────────────────────
-              const cleanVariantId =
-                item.variantId.includes('_') && item.variantId.length > 30
-                  ? item.variantId.split('_')[0] // strip "_duplicate" suffix
-                  : item.variantId;
-
-              const variant = await tx.productVariant.findUnique({
-                where: { id: cleanVariantId },
-                select: { id: true, stock: true, productId: true },
-              });
-              if (!variant) continue;
-
-              const newVariantStock = Math.max(0, variant.stock - deductQty);
-              await tx.productVariant.update({
-                where: { id: cleanVariantId },
-                data: { stock: newVariantStock },
-              });
-
-              // Re-aggregate product.quantity from all variants
-              const allVariants = await tx.productVariant.findMany({
-                where: { productId: variant.productId },
-                select: { stock: true },
-              });
-              const totalStock = allVariants.reduce((s, v) => s + v.stock, 0);
-
-              await tx.product.update({
-                where: { id: variant.productId },
-                data: { quantity: totalStock, inStock: totalStock > 0 },
-              });
-              await tx.inventory.updateMany({
-                where: { productId: variant.productId, storeId },
-                data: { quantity: totalStock },
-              });
-            } else {
-              // ── Legacy fallback: no variantId → deduct from product/inventory ─
-              const product = await tx.product.findFirst({
-                where: { id: item.productId, storeId },
-                select: { id: true, quantity: true },
-              });
-              if (!product) continue;
-
-              const inv = await tx.inventory.findUnique({
-                where: { productId_storeId: { productId: item.productId, storeId } },
-              });
-              const currentQty = inv?.quantity ?? product.quantity ?? 0;
-              const newQty = Math.max(0, currentQty - deductQty);
-
-              if (inv) {
-                await tx.inventory.update({
-                  where: { productId_storeId: { productId: item.productId, storeId } },
-                  data: { quantity: newQty },
-                });
-              } else {
-                await tx.inventory.create({
-                  data: { productId: item.productId, storeId, quantity: newQty, lowStock: 10 },
-                });
-              }
-              await tx.product.update({
-                where: { id: item.productId },
-                data: { quantity: newQty, inStock: newQty > 0 },
-              });
-            }
-          }
-
-          // 3. Record sale
+          // 2. Record sale
           await tx.sale.create({
             data: {
               storeId,
@@ -184,6 +117,11 @@ export async function POST(request) {
               createdAt: createdAt ? new Date(createdAt) : new Date(),
             },
           });
+
+          // ✅ NO stock deduction here.
+          // Stock is already handled by POST /api/inventory/deduct
+          // which fires immediately when the bill is completed on the frontend.
+          // Adding deduction here too would cause double stock reduction.
 
           return newBill;
         });

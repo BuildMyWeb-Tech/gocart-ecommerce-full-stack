@@ -128,7 +128,7 @@ export default function AddProductPage() {
       }
     };
     fetchProduct();
-  }, [isEditMode, editId]);
+  }, [isEditMode, editId, getToken, router]);
 
   // ── Size toggle ───────────────────────────────────────────────
   const toggleSize = (size) => {
@@ -444,7 +444,7 @@ export default function AddProductPage() {
               onChange={(e) => setProductInfo({ ...productInfo, description: e.target.value })}
               placeholder="Describe your product"
               rows={4}
-              
+              required              
               className="w-full p-3 px-4 outline-none border border-slate-200 rounded-lg resize-none focus:ring-2 focus:ring-indigo-100 bg-slate-50 placeholder:text-slate-400"
             />
           </label>
