@@ -207,36 +207,6 @@
    📄 StoreProvider.js
 📁 assets
    📄 assets.js
-   📄 gs_logo.jpg
-   📄 happy_store.webp
-   📄 hero_model_img.png
-   📄 hero_product_img1.png
-   📄 hero_product_img2.png
-   📄 img_1.jpg
-   📄 img_2.jpg
-   📄 img_3.jpg
-   📄 img_4.jpg
-   📄 img_5.jpg
-   📄 product_img1.png
-   📄 product_img10.png
-   📄 product_img11.png
-   📄 product_img12.png
-   📄 product_img13.png
-   📄 product_img14.png
-   📄 product_img15.png
-   📄 product_img16.png
-   📄 product_img2.png
-   📄 product_img3.png
-   📄 product_img4.png
-   📄 product_img5.png
-   📄 product_img6.png
-   📄 product_img7.png
-   📄 product_img8.png
-   📄 product_img9.png
-   📄 profile_pic1.jpg
-   📄 profile_pic2.jpg
-   📄 profile_pic3.jpg
-   📄 upload_area.svg
 📄 checkdb.mjs
 📄 checkSales.mjs
 📁 components
@@ -332,6 +302,3 @@
          📄 migration.sql
       📄 migration_lock.toml
    📄 schema.prisma
-📄 README.md
-📄 show-structure.js
-📄 show-structure.txt

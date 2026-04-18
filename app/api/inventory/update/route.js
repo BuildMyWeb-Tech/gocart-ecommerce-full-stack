@@ -1,71 +1,35 @@
-// // app/api/inventory/update/route.js
-// // PUT /api/inventory/update — manual stock adjustment by store owner (Clerk) or employee (JWT)
-// import prisma from '@/lib/prisma';
-// import authSeller from '@/middlewares/authSeller';
-// import { verifyEmployeeToken, hasPermission } from '@/middlewares/authEmployee';
-// import { getAuth } from '@clerk/nextjs/server';
-// import { NextResponse } from 'next/server';
+// app/api/inventory/route.js
+// Threshold-only update — never touches quantity
+import prisma from '@/lib/prisma';
+import authSeller from '@/middlewares/authSeller';
+import { getAuth } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
 
-// // ── Resolve storeId from any auth source ─────────────────────────
-// async function resolveStoreId(request) {
-//   const empPayload = verifyEmployeeToken(request);
-//   if (empPayload) {
-//     // Employees with inventory permission can update stock
-//     if (!hasPermission(empPayload, 'inventory')) {
-//       return { storeId: null, error: 'No inventory permission' };
-//     }
-//     return { storeId: empPayload.storeId };
-//   }
+export async function POST(request) {
+  try {
+    const { userId } = getAuth(request);
+    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-//   const { userId } = getAuth(request);
-//   if (!userId) return { storeId: null, error: 'Unauthorized' };
+    const storeId = await authSeller(userId);
+    if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
 
-//   const storeId = await authSeller(userId);
-//   if (!storeId) return { storeId: null, error: 'Not authorized' };
+    const { productId, lowStock } = await request.json();
+    if (!productId) return NextResponse.json({ error: 'productId required' }, { status: 400 });
+    if (lowStock === undefined || lowStock === null)
+      return NextResponse.json({ error: 'lowStock required' }, { status: 400 });
 
-//   return { storeId };
-// }
+    const product = await prisma.product.findFirst({ where: { id: productId, storeId } });
+    if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
 
-// export async function PUT(request) {
-//   try {
-//     const { storeId, error } = await resolveStoreId(request);
-//     if (!storeId) return NextResponse.json({ error: error || 'Unauthorized' }, { status: 401 });
+    const inventory = await prisma.inventory.upsert({
+      where: { productId_storeId: { productId, storeId } },
+      update: { lowStock: Math.max(1, Number(lowStock)) },
+      create: { productId, storeId, quantity: 0, lowStock: Math.max(1, Number(lowStock)) },
+    });
 
-//     const { productId, quantity, lowStock } = await request.json();
-//     if (!productId) return NextResponse.json({ error: 'productId required' }, { status: 400 });
-//     if (quantity === undefined)
-//       return NextResponse.json({ error: 'quantity required' }, { status: 400 });
-
-//     const newQty = Math.max(0, Number(quantity));
-
-//     // Verify product belongs to this store
-//     const product = await prisma.product.findFirst({ where: { id: productId, storeId } });
-//     if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 });
-
-//     // Upsert inventory + sync product fields atomically
-//     const [inv] = await prisma.$transaction([
-//       prisma.inventory.upsert({
-//         where: { productId_storeId: { productId, storeId } },
-//         update: {
-//           quantity: newQty,
-//           ...(lowStock !== undefined && { lowStock: Number(lowStock) }),
-//         },
-//         create: { productId, storeId, quantity: newQty, lowStock: Number(lowStock) || 10 },
-//       }),
-//       prisma.product.update({
-//         where: { id: productId },
-//         data: { quantity: newQty, inStock: newQty > 0 },
-//       }),
-//     ]);
-
-//     return NextResponse.json({
-//       message: 'Stock updated',
-//       inventory: inv,
-//       quantity: newQty,
-//       inStock: newQty > 0,
-//     });
-//   } catch (error) {
-//     console.error('PUT /api/inventory/update error:', error);
-//     return NextResponse.json({ error: error.message }, { status: 400 });
-//   }
-// }
+    return NextResponse.json({ message: 'Threshold updated', inventory });
+  } catch (error) {
+    console.error('POST /api/inventory error:', error);
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+}

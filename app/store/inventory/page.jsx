@@ -1,7 +1,7 @@
 // app/store/inventory/page.jsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
 import { useAuth } from '@clerk/nextjs';
@@ -38,36 +38,40 @@ function StockBadge({ quantity, lowStock }) {
 }
 
 // ── Editable qty cell ─────────────────────────────────────────────
-function EditableQty({ inv, onUpdated }) {
+function EditableThreshold({ inv, onUpdated }) {
   const { getToken } = useAuth();
-  const [qty, setQty] = useState(inv.quantity);
   const [lowStock, setLowStock] = useState(inv.lowStock);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const inputRef = useRef(null);
 
   useEffect(() => {
-    setQty(inv.quantity);
     setLowStock(inv.lowStock);
-  }, [inv.quantity, inv.lowStock]);
+  }, [inv.lowStock]);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const cancel = () => {
+    setLowStock(inv.lowStock); // restore original
+    setEditing(false);
+  };
 
   const save = async () => {
-    if (qty === inv.quantity && lowStock === inv.lowStock) {
-      setEditing(false);
-      return;
-    }
+    if (lowStock === inv.lowStock) { setEditing(false); return; }
     try {
       setSaving(true);
       const token = await getToken();
       const { data } = await axios.post(
         '/api/inventory',
-        { productId: inv.productId, quantity: qty, lowStock },
+        { productId: inv.productId, lowStock },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      onUpdated(inv.productId, data.inventory.quantity, data.inventory.lowStock);
-      toast.success('Stock updated');
+      onUpdated(inv.productId, data.inventory.lowStock);
+      toast.success('Threshold updated');
     } catch (err) {
       toast.error(err?.response?.data?.error || 'Failed to update');
-      setQty(inv.quantity);
       setLowStock(inv.lowStock);
     } finally {
       setSaving(false);
@@ -79,56 +83,42 @@ function EditableQty({ inv, onUpdated }) {
     return (
       <button
         onClick={() => setEditing(true)}
-        className="text-slate-700 font-semibold hover:text-indigo-600 hover:underline transition-colors"
-        title="Click to edit"
+        className="text-slate-600 hover:text-indigo-600 hover:underline transition-colors tabular-nums"
+        title="Click to edit threshold"
       >
-        {qty}
+        {lowStock}
       </button>
     );
   }
 
   return (
     <div className="flex items-center gap-2">
-      <div className="flex flex-col gap-1">
-        <input
-          type="number"
-          min="0"
-          value={qty}
-          onChange={(e) => setQty(Math.max(0, Number(e.target.value)))}
-          className="w-20 h-7 text-center text-sm border border-indigo-400 rounded-md ring-2 ring-indigo-100 outline-none"
-          placeholder="Qty"
-          autoFocus
-        />
-        <input
-          type="number"
-          min="1"
-          value={lowStock}
-          onChange={(e) => setLowStock(Math.max(1, Number(e.target.value)))}
-          className="w-20 h-7 text-center text-xs border border-amber-300 rounded-md ring-2 ring-amber-100 outline-none"
-          placeholder="Low threshold"
-          title="Low stock threshold"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-md hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-1"
-        >
-          {saving ? <Loader2 size={10} className="animate-spin" /> : null}
-          Save
-        </button>
-        <button
-          onClick={() => {
-            setQty(inv.quantity);
-            setLowStock(inv.lowStock);
-            setEditing(false);
-          }}
-          className="px-3 py-1 text-slate-500 text-xs border border-slate-200 rounded-md hover:bg-slate-50"
-        >
-          Cancel
-        </button>
-      </div>
+      <input
+        ref={inputRef}
+        type="number"
+        min="1"
+        value={lowStock}
+        onChange={(e) => setLowStock(Math.max(1, Number(e.target.value)))}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save();
+          if (e.key === 'Escape') cancel();
+        }}
+        className="w-20 h-7 text-center text-sm border border-amber-300 rounded-md ring-2 ring-amber-100 outline-none"
+      />
+      <button
+        onClick={save}
+        disabled={saving}
+        className="px-3 py-1 bg-indigo-600 text-white text-xs rounded-md hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-1"
+      >
+        {saving ? <Loader2 size={10} className="animate-spin" /> : null}
+        Save
+      </button>
+      <button
+        onClick={cancel}
+        className="px-3 py-1 text-slate-500 text-xs border border-slate-200 rounded-md hover:bg-slate-50"
+      >
+        Cancel
+      </button>
     </div>
   );
 }
@@ -160,10 +150,10 @@ export default function StoreInventoryPage() {
     fetchInventory();
   }, [fetchInventory]);
 
-  const handleUpdated = useCallback((productId, newQty, newLowStock) => {
+  const handleUpdated = useCallback((productId, newLowStock) => {
     setInventory((prev) =>
       prev.map((inv) =>
-        inv.productId === productId ? { ...inv, quantity: newQty, lowStock: newLowStock } : inv
+        inv.productId === productId ? { ...inv, lowStock: newLowStock } : inv
       )
     );
   }, []);
@@ -312,14 +302,16 @@ export default function StoreInventoryPage() {
                         </div>
                       </td>
 
-                      {/* Editable Qty */}
+                      {/* Stock Qty — READ ONLY */}
                       <td className="px-5 py-4">
-                        <EditableQty inv={inv} onUpdated={handleUpdated} />
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 font-semibold text-sm tabular-nums">
+                          {inv.quantity}
+                        </span>
                       </td>
 
-                      {/* Low Threshold */}
-                      <td className="px-5 py-4 hidden sm:table-cell text-slate-500">
-                        {inv.lowStock}
+                      {/* Low Threshold — EDITABLE */}
+                      <td className="px-5 py-4 hidden sm:table-cell">
+                        <EditableThreshold inv={inv} onUpdated={handleUpdated} />
                       </td>
 
                       {/* Status Badge */}
