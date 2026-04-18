@@ -434,16 +434,32 @@ function CombinedInput({
   const [value, setValue] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
+  const scanTimer = useRef(null);
   const lockRef = useRef(null);
-  const searchTimer = useRef(null);
+
+  // Focus the search input ONLY when no other input/textarea/select is active
+  const tryFocus = useCallback(() => {
+    if (disabled) return;
+    const active = document.activeElement;
+    if (!active) { inputRef.current?.focus(); return; }
+    const tag = active.tagName.toLowerCase();
+    // Don't steal focus from other inputs, textareas, selects, or buttons
+    if (['input', 'textarea', 'select', 'button', 'a'].includes(tag)) return;
+    // Don't steal if inside a modal dialog
+    if (active.closest('[role="dialog"]')) return;
+    inputRef.current?.focus();
+  }, [disabled]);
 
   useEffect(() => {
-    if (disabled) return;
-    const focus = () => {
-      if (document.activeElement !== inputRef.current) inputRef.current?.focus();
-    };
-    focus();
-    lockRef.current = setInterval(focus, 500);
+    if (disabled) {
+      clearInterval(lockRef.current);
+      return;
+    }
+    // Initial focus
+    tryFocus();
+    // Interval only retakes focus when a non-input element is active
+    lockRef.current = setInterval(tryFocus, 500);
+
     const onClick = (e) => {
       const tag = e.target.tagName.toLowerCase();
       if (
@@ -457,7 +473,7 @@ function CombinedInput({
       clearInterval(lockRef.current);
       document.removeEventListener('click', onClick);
     };
-  }, [disabled]);
+  }, [disabled, tryFocus]);
 
   useEffect(() => {
     setShowDropdown(searchResults && searchResults.length > 0 && value.trim().length > 0);
@@ -467,8 +483,8 @@ function CombinedInput({
   const handleChange = (e) => {
     const v = e.target.value;
     setValue(v);
-    clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
+    clearTimeout(scanTimer.current);
+    scanTimer.current = setTimeout(() => {
       if (v.trim()) onSearch(v.trim());
     }, 120);
   };
@@ -487,7 +503,6 @@ function CombinedInput({
           return;
         }
       }
-      // Treat as barcode
       onScan(v);
       setValue('');
       setShowDropdown(false);
@@ -498,14 +513,14 @@ function CombinedInput({
       e.preventDefault();
       setActiveIdx((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Escape') {
-      setValue('');
       setShowDropdown(false);
+      setValue('');
     }
   };
 
   return (
     <div className="relative">
-      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500">
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 flex items-center gap-1">
         <ScanLine size={15} />
       </div>
       <input
@@ -553,14 +568,14 @@ function CombinedInput({
                   {(p.variants || []).map((v) => (
                     <span
                       key={v.id}
-                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${v.stock === 0 ? 'bg-red-50 text-red-400' : 'bg-blue-50 text-blue-600'}`}
+                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${v.stock === 0 ? 'bg-red-50 text-red-400' : 'bg-indigo-50 text-indigo-600'}`}
                     >
                       {v.size} ₹{v.price}
                     </span>
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-1 text-xs text-blue-600 font-medium flex-shrink-0">
+              <div className="flex items-center gap-1 text-xs text-indigo-600 font-medium flex-shrink-0">
                 <Layers size={10} />
                 {(p.variants || []).length} sizes
               </div>
@@ -575,8 +590,21 @@ function CombinedInput({
 // ─────────────────────────────────────────────────────────────────────────────
 // ── SIZE PICKER MODAL ────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
-function SizePickerModal({ product, onSelect, onClose }) {
+function SizePickerModal({ product, onConfirm, onClose }) {
   const variants = product.variants || [];
+  const [selected, setSelected] = useState([]);
+
+  const toggleVariant = (variant) => {
+    if (variant.stock === 0) return;
+    setSelected((prev) =>
+      prev.find((v) => v.id === variant.id)
+        ? prev.filter((v) => v.id !== variant.id)
+        : [...prev, variant]
+    );
+  };
+
+  const isSelected = (variant) => selected.some((v) => v.id === variant.id);
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
@@ -585,8 +613,8 @@ function SizePickerModal({ product, onSelect, onClose }) {
     >
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-            <Layers size={20} className="text-blue-600" />
+          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+            <Layers size={20} className="text-indigo-600" />
           </div>
           <div>
             <h3 className="font-bold text-slate-800">Select Size</h3>
@@ -599,31 +627,44 @@ function SizePickerModal({ product, onSelect, onClose }) {
             <X size={16} />
           </button>
         </div>
+
         {variants.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-4">No variants found.</p>
+          <p className="text-sm text-slate-400 text-center py-4">
+            No variants found for this product.
+          </p>
         ) : (
           <div className="space-y-2">
             {variants.map((v) => {
               const isOut = v.stock === 0;
+              const sel = isSelected(v);
               return (
                 <button
                   key={v.id}
-                  onClick={() => !isOut && onSelect(product, v)}
+                  onClick={() => toggleVariant(v)}
                   disabled={isOut}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all ${isOut ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' : 'border-blue-200 bg-blue-50 text-blue-700 hover:border-blue-400 hover:bg-blue-100'}`}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 text-sm font-medium transition-all
+                    ${isOut
+                      ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                      : sel
+                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm ring-2 ring-indigo-200'
+                        : 'border-indigo-200 bg-white text-indigo-700 hover:border-indigo-400 hover:bg-indigo-50'
+                    }`}
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className={`inline-flex items-center justify-center w-10 h-8 rounded-lg text-xs font-bold ${isOut ? 'bg-slate-100 text-slate-300' : 'bg-blue-600 text-white'}`}
+                      className={`inline-flex items-center justify-center w-10 h-8 rounded-lg text-xs font-bold transition-all
+                        ${isOut ? 'bg-slate-100 text-slate-300' : sel ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-600'}`}
                     >
-                      {v.size}
+                      {sel ? <CheckCircle size={14} /> : v.size}
                     </span>
-                    <span className="font-semibold">
-                      ₹{Number(v.price).toLocaleString('en-IN')}
-                    </span>
+                    <div className="text-left">
+                      <span className="font-semibold">{v.size}</span>
+                      <span className="ml-2 text-indigo-600">₹{Number(v.price).toLocaleString('en-IN')}</span>
+                    </div>
                   </div>
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${v.stock === 0 ? 'bg-red-50 text-red-500' : v.stock < 5 ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium
+                      ${isOut ? 'bg-red-50 text-red-500' : v.stock < 5 ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}
                   >
                     {isOut ? 'Out of stock' : `${v.stock} left`}
                   </span>
@@ -632,17 +673,35 @@ function SizePickerModal({ product, onSelect, onClose }) {
             })}
           </div>
         )}
-        <button
-          onClick={onClose}
-          className="mt-4 w-full py-2.5 text-slate-400 hover:text-slate-600 text-sm rounded-xl hover:bg-slate-50"
-        >
-          Cancel
-        </button>
+
+
+
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 text-slate-500 hover:text-slate-700 text-sm rounded-xl border border-slate-200 hover:bg-slate-50 font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              if (selected.length > 0) onConfirm(product, selected);
+            }}
+            disabled={selected.length === 0}
+            className={`flex-1 py-2.5 text-sm rounded-xl font-semibold transition-all
+              ${selected.length > 0
+                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm'
+                : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+          >
+            {selected.length === 0
+              ? 'Confirm'
+              : `Confirm (${selected.length} size${selected.length > 1 ? 's' : ''})`}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // ── PRINT SETTINGS MODAL ────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1092,10 +1151,7 @@ export default function EmployeeBillingPage() {
       showScanFeedback('error', 'No variants found for this product');
       return;
     }
-    if (product.variants.length === 1 && product.variants[0].stock > 0) {
-      addVariantToCart(product, product.variants[0]);
-      return;
-    }
+    // Always open modal so user can multi-select; single-variant still works via confirm
     setSizePickerModal(product);
   };
 
@@ -2113,9 +2169,9 @@ export default function EmployeeBillingPage() {
       {sizePickerModal && (
         <SizePickerModal
           product={sizePickerModal}
-          onSelect={(product, variant) => {
+          onConfirm={(product, variants) => {
             setSizePickerModal(null);
-            addVariantToCart(product, variant);
+            variants.forEach((variant) => addVariantToCart(product, variant));
           }}
           onClose={() => setSizePickerModal(null)}
         />

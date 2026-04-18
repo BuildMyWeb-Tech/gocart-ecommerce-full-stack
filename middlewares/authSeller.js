@@ -1,23 +1,32 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\middlewares\authSeller.js
 import prisma from '@/lib/prisma';
 
 const authSeller = async (userId) => {
-  try {
-    if (!userId) return false;
+  if (!userId) return null;
 
+  try {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      include: { store: true },
+      select: {
+        id: true,
+        store: {
+          select: {
+            id: true,
+            status: true,
+          },
+        },
+      },
     });
 
-    if (!user) return false;
-    if (!user.store) return false;
-    if (user.store.status === 'approved') return user.store.id;
+    if (!user || !user.store) return null;
 
-    return false;
+    if (user.store.status !== 'approved') return null;
+
+    return user.store.id;
   } catch (error) {
-    console.error('authSeller error:', error);
-    return false;
+    console.error('🔥 authSeller DB error:', error);
+
+    // IMPORTANT: don't pretend unauthorized
+    throw new Error('DB_ERROR_AUTH_SELLER');
   }
 };
 
