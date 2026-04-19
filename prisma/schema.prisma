@@ -236,14 +236,17 @@ model Bill {
   paymentMode String     @default("CASH")
   note        String?
   createdAt   DateTime   @default(now())
+  employeeId  String?    // ← ADD THIS
 
   items       BillItem[]
   store       Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  employee    Employee?  @relation(fields: [employeeId], references: [id])  // ← ADD THIS
 
   @@index([storeId])
   @@index([createdAt])
   @@index([billNumber])
   @@index([storeId, createdAt])
+  @@index([employeeId])   // ← ADD THIS
 }
 
 model BillItem {
@@ -276,13 +279,17 @@ model Sale {
   source      SaleSource @default(ORDER)
   referenceId String
   createdAt   DateTime   @default(now())
+  employeeId  String?    // ← ADD THIS
+
   store       Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  employee    Employee?  @relation(fields: [employeeId], references: [id])  // ← ADD THIS
 
   @@index([storeId])
   @@index([createdAt])
   @@index([storeId, createdAt])
   @@index([source])
   @@index([referenceId])
+  @@index([employeeId])   // ← ADD THIS
 }
 
 model Employee {
@@ -296,6 +303,8 @@ model Employee {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  bills       Bill[]   // ← ADD THIS
+  sales       Sale[]   // ← ADD THIS
 
   @@index([storeId])
 }

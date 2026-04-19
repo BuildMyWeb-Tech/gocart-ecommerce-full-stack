@@ -7,15 +7,33 @@ import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { buildDateRange, round2, fmtDay } from '@/lib/reportUtils';
+import authEmployee from '@/middlewares/authEmployee';
 
+// REPLACE the resolveRole function:
 async function resolveRole(request) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (token) {
+    try {
+      const emp = await authEmployee(token);  // import authEmployee
+      if (emp) {
+        return {
+          role: 'EMPLOYEE',
+          storeId: emp.storeId,
+          employeeId: emp.role === 'STORE_OWNER' ? null : emp.id,
+        };
+      }
+    } catch {}
+  }
+
   const { userId } = getAuth(request);
-  if (!userId) return { role: null, storeId: null };
+  if (!userId) return { role: null, storeId: null, employeeId: null };
   const isAdmin = await authAdmin(userId);
-  if (isAdmin) return { role: 'ADMIN', storeId: null };
+  if (isAdmin) return { role: 'ADMIN', storeId: null, employeeId: null };
   const storeId = await authSeller(userId);
-  if (storeId) return { role: 'STORE', storeId };
-  return { role: null, storeId: null };
+  if (storeId) return { role: 'STORE', storeId, employeeId: null };
+  return { role: null, storeId: null, employeeId: null };
 }
 
 // ✅ Convert a UTC Date to IST YYYY-MM-DD string for bucketing
@@ -27,9 +45,9 @@ function toISTDateKey(utcDate) {
 
 export async function GET(request) {
   try {
-    const { role, storeId: myStoreId } = await resolveRole(request);
-    if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
-
+    const identity = await resolveRole(request);
+    if (!identity?.role) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || 'month';
     const from = searchParams.get('from');
@@ -44,11 +62,13 @@ export async function GET(request) {
       );
     }
 
-    const scopedStoreId = role === 'ADMIN' ? filterStore || undefined : myStoreId;
+    const scopedStoreId = identity?.role === 'ADMIN' ? filterStore || undefined : identity?.storeId;
+    const scopedEmployeeId = identity?.employeeId || undefined;
 
     const where = {
       createdAt: dateRange,
       ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
+      ...(scopedEmployeeId ? { employeeId: scopedEmployeeId } : {}),
     };
 
     const sales = await prisma.sale.findMany({

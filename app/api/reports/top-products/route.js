@@ -15,15 +15,32 @@ import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { buildDateRange, round2 } from '@/lib/reportUtils';
+import authEmployee from '@/middlewares/authEmployee';
 
 async function resolveRole(request) {
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (token) {
+    try {
+      const emp = await authEmployee(token);
+      if (emp) {
+        return {
+          role: 'EMPLOYEE',
+          storeId: emp.storeId,
+          employeeId: emp.role === 'STORE_OWNER' ? null : emp.id,
+        };
+      }
+    } catch {}
+  }
+
   const { userId } = getAuth(request);
-  if (!userId) return { role: null, storeId: null };
+  if (!userId) return { role: null, storeId: null, employeeId: null };
   const isAdmin = await authAdmin(userId);
-  if (isAdmin) return { role: 'ADMIN', storeId: null };
+  if (isAdmin) return { role: 'ADMIN', storeId: null, employeeId: null };
   const storeId = await authSeller(userId);
-  if (storeId) return { role: 'STORE', storeId };
-  return { role: null, storeId: null };
+  if (storeId) return { role: 'STORE', storeId, employeeId: null };
+  return { role: null, storeId: null, employeeId: null };
 }
 
 export async function GET(request) {
@@ -46,6 +63,7 @@ export async function GET(request) {
       where: {
         createdAt: dateRange,
         ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
+        ...(identity.employeeId ? { employeeId: identity.employeeId } : {}),
       },
       select: { referenceId: true },
     });

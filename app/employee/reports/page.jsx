@@ -235,7 +235,9 @@ export default function EmployeeReportsPage() {
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <BarChart2 size={24} className="text-green-600" /> Sales Report
           </h1>
-          <p className="text-sm text-slate-500 mt-1">Track store revenue and order performance</p>
+          <p className="text-sm text-slate-500 mt-1">
+            Your personal sales performance — {employee?.name}
+          </p>
         </div>
         <button
           onClick={fetchAll}
@@ -314,7 +316,7 @@ export default function EmployeeReportsPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
-          title="Total Revenue"
+          title="My Revenue"
           value={`₹${(summary?.revenue || 0).toLocaleString('en-IN')}`}
           sub={`${summary?.orders || 0} transactions`}
           icon={IndianRupee}
@@ -323,7 +325,7 @@ export default function EmployeeReportsPage() {
           loading={loadingSummary}
         />
         <KpiCard
-          title="Total Orders"
+          title="My Bills"
           value={summary?.orders || 0}
           sub="in selected period"
           icon={ShoppingCart}
@@ -332,7 +334,7 @@ export default function EmployeeReportsPage() {
           loading={loadingSummary}
         />
         <KpiCard
-          title="Avg Order Value"
+          title="Avg Bill Value"
           value={`₹${(summary?.aov || 0).toLocaleString('en-IN')}`}
           sub="per transaction"
           icon={TrendingUp}

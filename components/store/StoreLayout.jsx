@@ -6,17 +6,20 @@ import Link from 'next/link';
 import { ArrowRightIcon, ShieldAlert, LogIn } from 'lucide-react';
 import SellerNavbar from './StoreNavbar';
 import SellerSidebar from './StoreSidebar';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, SignIn } from '@clerk/nextjs';
 import axios from 'axios';
 
 const StoreLayout = ({ children }) => {
   const { getToken, isLoaded, isSignedIn } = useAuth();
 
-  const [isSeller, setIsSeller]           = useState(false);
-  const [loading, setLoading]             = useState(true);
-  const [storeInfo, setStoreInfo]         = useState(null);
+  const [isSeller, setIsSeller]             = useState(false);
+  const [loading, setLoading]               = useState(true);
+  const [storeInfo, setStoreInfo]           = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [employeeSession, setEmployeeSession] = useState(null);
+
+  // NEW: tracks whether we have an employee token in localStorage
+  const [hasEmployeeToken, setHasEmployeeToken] = useState(false);
 
   const fetchAccess = async () => {
     try {
@@ -27,6 +30,7 @@ const StoreLayout = ({ children }) => {
           : null;
 
       if (empToken) {
+        setHasEmployeeToken(true);
         try {
           const { data } = await axios.get('/api/store/employee-auth', {
             headers: { Authorization: `Bearer ${empToken}` },
@@ -34,29 +38,29 @@ const StoreLayout = ({ children }) => {
 
           if (data?.valid && data?.store) {
             setStoreInfo(data.store);
-            setEmployeeSession(data.employee); // from DB — always fresh
+            setEmployeeSession(data.employee);
             setIsSeller(true);
             setLoading(false);
-            return; // ← STOP. Don't touch Clerk at all.
+            return;
           }
         } catch {
-          // invalid token
+          // invalid token — fall through
         }
         // Token failed — clear and fall through to Clerk
         localStorage.removeItem('employeeToken');
         localStorage.removeItem('employeeData');
+        setHasEmployeeToken(false);
       }
 
       // ── PRIORITY 2: Clerk store owner (only if no emp token) ───
       if (!isSignedIn) {
-        setIsSeller(false);
+        // Don't set isSeller — let the render logic show <SignIn> modal
         setLoading(false);
         return;
       }
 
       const token = await getToken();
       if (!token) {
-        setIsSeller(false);
         setLoading(false);
         return;
       }
@@ -67,7 +71,7 @@ const StoreLayout = ({ children }) => {
 
       setIsSeller(data.isSeller || false);
       setStoreInfo(data.storeInfo || data.store || null);
-      setEmployeeSession(null); // Clerk owner — no employee session
+      setEmployeeSession(null);
     } catch (error) {
       console.error('StoreLayout auth error:', error);
       setIsSeller(false);
@@ -100,8 +104,10 @@ const StoreLayout = ({ children }) => {
     return () => { document.body.style.overflow = 'auto'; };
   }, [mobileMenuOpen]);
 
+  // ── 1. Clerk/employee SDK not ready yet ──────────────────────
   if (!isLoaded || loading) return <Loading />;
 
+  // ── 2. Fully authenticated seller or employee ─────────────────
   if (isSeller) {
     return (
       <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
@@ -134,7 +140,10 @@ const StoreLayout = ({ children }) => {
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-gradient-to-tr from-slate-100/30 to-transparent rounded-full translate-y-1/2 -translate-x-1/2 z-0 pointer-events-none" />
             <div className="relative z-10 p-5 lg:pl-12 lg:pt-12">{children}</div>
             <div className="pb-4 text-center text-xs text-slate-400 relative z-10">
-              <p>© {new Date().getFullYear()} {storeInfo?.name || 'Store Dashboard'} • All Rights Reserved</p>
+              <p>
+                © {new Date().getFullYear()}{' '}
+                {storeInfo?.name || 'Store Dashboard'} • All Rights Reserved
+              </p>
             </div>
           </div>
         </div>
@@ -142,6 +151,18 @@ const StoreLayout = ({ children }) => {
     );
   }
 
+  // ── 3. No Clerk session AND no employee token
+  //       → Show Clerk <SignIn> modal (same as /admin behaviour) ─
+  if (!isSignedIn && !hasEmployeeToken) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <SignIn fallbackRedirectUrl="/store" routing="hash" />
+      </div>
+    );
+  }
+
+  // ── 4. Signed in via Clerk BUT not a seller
+  //       → Show "Access Denied" (they need to create/join a store) 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center text-center px-6 bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-md bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
@@ -154,17 +175,17 @@ const StoreLayout = ({ children }) => {
         </p>
         <div className="flex flex-col gap-3">
           <Link
-            href="/store/login"
+            href="/create-store"
             className="bg-gradient-to-r from-green-600 to-green-700 text-white flex items-center justify-center gap-2 py-3 px-6 rounded-lg text-sm font-medium shadow-md hover:from-green-700 hover:to-green-800 transition"
           >
             <LogIn size={16} /> Store / Employee Login
           </Link>
-          <Link
+          {/* <Link
             href="/"
             className="bg-gradient-to-r from-slate-700 to-slate-800 text-white flex items-center justify-center gap-2 py-3 px-6 rounded-lg text-sm font-medium shadow-md hover:from-slate-800 hover:to-slate-900 transition"
           >
             Back to Homepage <ArrowRightIcon size={18} />
-          </Link>
+          </Link> */}
         </div>
       </div>
     </div>

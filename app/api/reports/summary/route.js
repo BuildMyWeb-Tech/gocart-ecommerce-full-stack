@@ -1,40 +1,60 @@
 // app/api/reports/summary/route.js
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/reports/summary
-//
-// ✅ TC-10 FIX: Returns 400 (not 500) when custom range missing from/to
-// ✅ TC-13 FIX: Returns { growth, note } for zero-division comparison cases
-// ─────────────────────────────────────────────────────────────────────────────
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import authSeller from '@/middlewares/authSeller';
+import authEmployee from '@/middlewares/authEmployee';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import { buildDateRange, buildComparisonRanges, calcGrowth, round2 } from '@/lib/reportUtils';
 
-async function resolveRole(request) {
+async function resolveIdentity(request) {
+  // 1. Try employee JWT first (Authorization: Bearer <empToken>)
+  const authHeader = request.headers.get('authorization') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (token) {
+    try {
+      const emp = await authEmployee(token);
+      if (emp) {
+        const hasAccess =
+          emp.role === 'STORE_OWNER' || emp.permissions?.reports === true;
+        return {
+          role: 'EMPLOYEE',
+          storeId: emp.storeId,
+          employeeId: emp.id,
+          canSeeAll: emp.role === 'STORE_OWNER',
+          hasAccess,
+        };
+      }
+    } catch {}
+  }
+
+  // 2. Clerk session (store owner / admin)
   const { userId } = getAuth(request);
-  if (!userId) return { userId: null, role: null, storeId: null };
+  if (!userId) return null;
+
   const isAdmin = await authAdmin(userId);
-  if (isAdmin) return { userId, role: 'ADMIN', storeId: null };
+  if (isAdmin) return { role: 'ADMIN', storeId: null, employeeId: null, canSeeAll: true, hasAccess: true };
+
   const storeId = await authSeller(userId);
-  if (storeId) return { userId, role: 'STORE', storeId };
-  return { userId, role: null, storeId: null };
+  if (storeId) return { role: 'STORE', storeId, employeeId: null, canSeeAll: true, hasAccess: true };
+
+  return null;
 }
 
 export async function GET(request) {
   try {
-    const { role, storeId: myStoreId } = await resolveRole(request);
-    if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    const identity = await resolveIdentity(request);
+    if (!identity) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    if (!identity.hasAccess) return NextResponse.json({ error: 'No permission to view reports' }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || 'month';
+    const period = searchParams.get('period') || 'today';
     const from = searchParams.get('from');
     const to = searchParams.get('to');
     const filterStore = searchParams.get('storeId');
     const comparison = searchParams.get('comparison');
 
-    // ✅ TC-10 FIX: buildDateRange returns null for invalid custom range
     const dateRange = buildDateRange(period, from, to);
     if (!dateRange) {
       return NextResponse.json(
@@ -43,15 +63,24 @@ export async function GET(request) {
       );
     }
 
-    // Store role always scoped to own store; admin can filter or see all
-    const scopedStoreId = role === 'ADMIN' ? filterStore || undefined : myStoreId;
+    // Scope: admin can filter by store, store sees own, employee sees own bills only
+    const scopedStoreId =
+      identity.role === 'ADMIN'
+        ? filterStore || undefined
+        : identity.storeId;
+
+    // Employee: only their own sales (where employeeId matches)
+    const scopedEmployeeId =
+      identity.role === 'EMPLOYEE' && !identity.canSeeAll
+        ? identity.employeeId
+        : undefined;
 
     const where = {
       createdAt: dateRange,
       ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
+      ...(scopedEmployeeId ? { employeeId: scopedEmployeeId } : {}),
     };
 
-    // ── Current period aggregation ────────────────────────────────
     const agg = await prisma.sale.aggregate({
       where,
       _sum: { amount: true },
@@ -63,9 +92,38 @@ export async function GET(request) {
     const orders = agg._count.id || 0;
     const aov = round2(agg._avg.amount || 0);
 
-    // ── Top performing store (admin only) ─────────────────────────
+    // Employee breakdown — only for store/admin role
+    let employeeBreakdown = null;
+    if (identity.role !== 'EMPLOYEE' || identity.canSeeAll) {
+      const byEmployee = await prisma.sale.groupBy({
+        by: ['employeeId'],
+        where: { ...where, employeeId: { not: null } },
+        _sum: { amount: true },
+        _count: { id: true },
+        orderBy: { _sum: { amount: 'desc' } },
+      });
+
+      if (byEmployee.length > 0) {
+        const empIds = byEmployee.map((e) => e.employeeId).filter(Boolean);
+        const employees = await prisma.employee.findMany({
+          where: { id: { in: empIds } },
+          select: { id: true, name: true, email: true },
+        });
+        const empMap = Object.fromEntries(employees.map((e) => [e.id, e]));
+
+        employeeBreakdown = byEmployee.map((e) => ({
+          employeeId: e.employeeId,
+          name: empMap[e.employeeId]?.name || 'Unknown',
+          email: empMap[e.employeeId]?.email || '',
+          revenue: round2(e._sum.amount || 0),
+          bills: e._count.id || 0,
+        }));
+      }
+    }
+
+    // Top store — admin only
     let topStore = null;
-    if (role === 'ADMIN' && !filterStore) {
+    if (identity.role === 'ADMIN' && !filterStore) {
       const topStoreRaw = await prisma.sale.groupBy({
         by: ['storeId'],
         where: { createdAt: dateRange },
@@ -78,28 +136,26 @@ export async function GET(request) {
           where: { id: topStoreRaw[0].storeId },
           select: { id: true, name: true, logo: true, username: true },
         });
-        topStore = {
-          ...storeData,
-          revenue: round2(topStoreRaw[0]._sum.amount || 0),
-        };
+        topStore = { ...storeData, revenue: round2(topStoreRaw[0]._sum.amount || 0) };
       }
     }
 
-    // ── Comparison report ─────────────────────────────────────────
+    // Comparison
     let comparisonData = null;
     if (comparison) {
       const ranges = buildComparisonRanges(comparison);
       if (ranges) {
         const storeFilter = scopedStoreId ? { storeId: scopedStoreId } : {};
+        const empFilter = scopedEmployeeId ? { employeeId: scopedEmployeeId } : {};
 
         const [curr, prev] = await Promise.all([
           prisma.sale.aggregate({
-            where: { createdAt: ranges.current, ...storeFilter },
+            where: { createdAt: ranges.current, ...storeFilter, ...empFilter },
             _sum: { amount: true },
             _count: { id: true },
           }),
           prisma.sale.aggregate({
-            where: { createdAt: ranges.previous, ...storeFilter },
+            where: { createdAt: ranges.previous, ...storeFilter, ...empFilter },
             _sum: { amount: true },
             _count: { id: true },
           }),
@@ -110,25 +166,13 @@ export async function GET(request) {
         const currOrds = curr._count.id || 0;
         const prevOrds = prev._count.id || 0;
 
-        // ✅ TC-13 FIX: calcGrowth now returns { growth, note }
-        // note = "No previous data" when previous period had 0 sales
         const revGrowth = calcGrowth(currRev, prevRev);
         const ordGrowth = calcGrowth(currOrds, prevOrds);
 
         comparisonData = {
           labels: ranges.labels,
-          revenue: {
-            current: currRev,
-            previous: prevRev,
-            growth: revGrowth.growth,
-            note: revGrowth.note, // ✅ "No previous data" or null
-          },
-          orders: {
-            current: currOrds,
-            previous: prevOrds,
-            growth: ordGrowth.growth,
-            note: ordGrowth.note, // ✅ "No previous data" or null
-          },
+          revenue: { current: currRev, previous: prevRev, growth: revGrowth.growth, note: revGrowth.note },
+          orders: { current: currOrds, previous: prevOrds, growth: ordGrowth.growth, note: ordGrowth.note },
         };
       }
     }
@@ -139,9 +183,12 @@ export async function GET(request) {
         orders,
         aov,
         topStore,
+        employeeBreakdown,
         period,
         dateRange: { from: dateRange.gte, to: dateRange.lte },
         comparison: comparisonData,
+        // Tell the frontend which scope this response covers
+        scope: identity.role === 'EMPLOYEE' && !identity.canSeeAll ? 'employee' : 'store',
       },
     });
   } catch (error) {
