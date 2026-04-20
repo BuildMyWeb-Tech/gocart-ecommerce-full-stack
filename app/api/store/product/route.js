@@ -141,6 +141,9 @@ export async function GET(request) {
 }
 
 // ── PUT ────────────────────────────────────────────────────────
+// REPLACE only this function in app/api/store/product/route.js
+// Everything else (POST, GET, DELETE, imports) stays exactly the same.
+
 export async function PUT(request) {
   try {
     const { userId } = getAuth(request);
@@ -165,16 +168,65 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     }
 
-    const updated = await prisma.product.update({
-      where: { id: productId },
-      data: {
-        name: body.name,
-        description: body.description,
-        mrp: Number(body.mrp),
-        category: body.category,
-        keyFeatures: body.keyFeatures,
-        images: body.existingImages,
-      },
+    const variantList = body.variants || [];
+
+    const updated = await prisma.$transaction(async (tx) => {
+      // Update core product fields
+      const updatedProduct = await tx.product.update({
+        where: { id: productId },
+        data: {
+          name: body.name,
+          description: body.description,
+          mrp: Number(body.mrp),
+          category: body.category,
+          keyFeatures: body.keyFeatures,
+          images: body.existingImages,
+          // Recalculate aggregates if variants provided
+          ...(variantList.length > 0 && {
+            price: Math.min(...variantList.map((v) => Number(v.price))),
+            quantity: variantList.reduce((sum, v) => sum + Number(v.stock), 0),
+            inStock: variantList.some((v) => Number(v.stock) > 0),
+          }),
+        },
+      });
+
+      if (variantList.length > 0) {
+        // Upsert each variant: update if id present, create if new
+        for (const v of variantList) {
+          if (v.id) {
+            await tx.productVariant.update({
+              where: { id: v.id },
+              data: {
+                size: v.size,
+                barcode: v.barcode,
+                price: Number(v.price),
+                stock: Number(v.stock),
+              },
+            });
+          } else {
+            await tx.productVariant.create({
+              data: {
+                productId,
+                size: v.size,
+                barcode: v.barcode,
+                price: Number(v.price),
+                stock: Number(v.stock),
+              },
+            });
+          }
+        }
+
+        // Remove variants that were deleted in the form
+        const incomingIds = variantList.filter((v) => v.id).map((v) => v.id);
+        await tx.productVariant.deleteMany({
+          where: {
+            productId,
+            id: { notIn: incomingIds },
+          },
+        });
+      }
+
+      return updatedProduct;
     });
 
     return NextResponse.json({ message: 'Updated', product: updated });

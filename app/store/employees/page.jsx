@@ -19,15 +19,21 @@ import {
   RefreshCw,
   UserCheck,
   UserX,
+  Receipt,
+  Package,
+  ClipboardList,
+  BarChart2,
+  Tag,
+  ShoppingBag,
 } from 'lucide-react';
 
 const ALL_PERMISSIONS = [
-  { key: 'billing',            label: 'Billing',             desc: 'Create bills & process payments' },
-  { key: 'inventory',          label: 'Inventory',           desc: 'View stock levels' },
-  { key: 'orders',             label: 'Orders',              desc: 'View & update order status' },
-  { key: 'reports',            label: 'Reports',             desc: 'View sales analytics & reports' },
-  { key: 'product_categories', label: 'Product Categories',  desc: 'View product categories' },
-  { key: 'manage_product',     label: 'Manage Products',     desc: 'View all listed products' },
+  { key: 'billing',            label: 'Billing',             Icon: Receipt },
+  { key: 'inventory',          label: 'Inventory',                         Icon: Package },
+  { key: 'orders',             label: 'Orders',                   Icon: ClipboardList },
+  { key: 'reports',            label: 'Reports',              Icon: BarChart2 },
+  { key: 'product_categories', label: 'Categories',                  Icon: Tag },
+  { key: 'manage_product',     label: 'Products',                   Icon: ShoppingBag },
 ];
 
 const DEFAULT_PERMS = {
@@ -44,13 +50,14 @@ function PermissionBadge({ permissions }) {
   const granted = Object.entries(permissions || {})
     .filter(([, v]) => v)
     .map(([k]) => k);
-  if (!granted.length) return <span className="text-xs text-slate-400">No permissions</span>;
+  if (!granted.length)
+    return <span className="text-xs text-slate-400 italic">No permissions</span>;
   return (
     <div className="flex flex-wrap gap-1">
       {granted.map((p) => (
         <span
           key={p}
-          className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full capitalize"
+          className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs rounded-md font-medium capitalize"
         >
           {p.replace(/_/g, ' ')}
         </span>
@@ -58,6 +65,64 @@ function PermissionBadge({ permissions }) {
     </div>
   );
 }
+
+/* ─── Permission Toggle Card ─── */
+function PermCard({ perm, checked, onToggle }) {
+  const { Icon } = perm;
+  return (
+    <div
+      onClick={onToggle}
+      className={`
+        relative flex items-start gap-3 p-3 rounded-xl border cursor-pointer select-none
+        transition-all duration-150
+        ${checked
+          ? 'border-emerald-400 bg-emerald-50 shadow-sm shadow-emerald-100'
+          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}
+      `}
+    >
+      {/* icon */}
+      <div
+        className={`mt-0.5 flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors
+          ${checked ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400'}`}
+      >
+        <Icon size={15} />
+      </div>
+
+      {/* text */}
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-semibold leading-tight ${checked ? 'text-emerald-800' : 'text-slate-700'}`}>
+          {perm.label}
+        </p>
+        <p className="text-xs text-slate-400 mt-0.5 leading-tight">{perm.desc}</p>
+      </div>
+
+      {/* checkbox */}
+      <div
+        className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors
+          ${checked ? 'bg-emerald-600 border-emerald-600' : 'border-slate-300 bg-white'}`}
+      >
+        {checked && <Check size={11} className="text-white" strokeWidth={3} />}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Field wrapper ─── */
+function Field({ label, children, hint }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</label>
+        {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const inputCls =
+  'w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none ' +
+  'focus:ring-2 focus:ring-emerald-100 focus:border-emerald-400 transition placeholder:text-slate-300';
 
 export default function EmployeesPage() {
   const { getToken } = useAuth();
@@ -77,6 +142,7 @@ export default function EmployeesPage() {
     permissions: { ...DEFAULT_PERMS },
   });
 
+  /* ── auth header ── */
   const getAuthHeader = async () => {
     const empToken = typeof window !== 'undefined' ? localStorage.getItem('employeeToken') : null;
     if (empToken) return { Authorization: `Bearer ${empToken}` };
@@ -84,6 +150,7 @@ export default function EmployeesPage() {
     return { Authorization: `Bearer ${token}` };
   };
 
+  /* ── fetch ── */
   const fetchEmployees = async () => {
     try {
       setLoading(true);
@@ -97,19 +164,12 @@ export default function EmployeesPage() {
     }
   };
 
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
+  useEffect(() => { fetchEmployees(); }, []);
 
+  /* ── modal helpers ── */
   const openCreate = () => {
     setEditingEmployee(null);
-    setForm({
-      name: '',
-      email: '',
-      password: '',
-      role: 'EMPLOYEE',
-      permissions: { ...DEFAULT_PERMS },
-    });
+    setForm({ name: '', email: '', password: '', role: 'EMPLOYEE', permissions: { ...DEFAULT_PERMS } });
     setShowPassword(false);
     setModalOpen(true);
   };
@@ -127,44 +187,21 @@ export default function EmployeesPage() {
     setModalOpen(true);
   };
 
+  /* ── save ── */
   const handleSave = async () => {
-    if (!form.name || !form.email) {
-      toast.error('Name and email are required');
-      return;
-    }
-    if (!editingEmployee && !form.password) {
-      toast.error('Password is required');
-      return;
-    }
-
+    if (!form.name || !form.email) { toast.error('Name and email are required'); return; }
+    if (!editingEmployee && !form.password) { toast.error('Password is required'); return; }
     try {
       setSaving(true);
       const headers = await getAuthHeader();
-
       if (editingEmployee) {
-        const payload = {
-          id: editingEmployee.id,
-          name: form.name,
-          email: form.email,
-          role: form.role,
-          permissions: form.permissions,
-        };
+        const payload = { id: editingEmployee.id, name: form.name, email: form.email, role: form.role, permissions: form.permissions };
         if (form.password) payload.password = form.password;
         const { data } = await axios.put('/api/employee/update', payload, { headers });
         setEmployees((prev) => prev.map((e) => (e.id === editingEmployee.id ? data.employee : e)));
         toast.success('Employee updated');
       } else {
-        const { data } = await axios.post(
-          '/api/employee/create',
-          {
-            name: form.name,
-            email: form.email,
-            password: form.password,
-            role: form.role,
-            permissions: form.permissions,
-          },
-          { headers }
-        );
+        const { data } = await axios.post('/api/employee/create', { name: form.name, email: form.email, password: form.password, role: form.role, permissions: form.permissions }, { headers });
         setEmployees((prev) => [data.employee, ...prev]);
         toast.success('Employee created');
       }
@@ -176,21 +213,17 @@ export default function EmployeesPage() {
     }
   };
 
+  /* ── toggle active ── */
   const handleToggleActive = async (emp) => {
     try {
       const headers = await getAuthHeader();
-      const { data } = await axios.put(
-        '/api/employee/update',
-        { id: emp.id, isActive: !emp.isActive },
-        { headers }
-      );
+      const { data } = await axios.put('/api/employee/update', { id: emp.id, isActive: !emp.isActive }, { headers });
       setEmployees((prev) => prev.map((e) => (e.id === emp.id ? data.employee : e)));
       toast.success(data.employee.isActive ? 'Employee activated' : 'Employee deactivated');
-    } catch {
-      toast.error('Failed to update status');
-    }
+    } catch { toast.error('Failed to update status'); }
   };
 
+  /* ── delete ── */
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
@@ -199,72 +232,80 @@ export default function EmployeesPage() {
       setEmployees((prev) => prev.filter((e) => e.id !== deleteId));
       toast.success('Employee deleted');
       setDeleteId(null);
-    } catch {
-      toast.error('Failed to delete employee');
-    }
+    } catch { toast.error('Failed to delete employee'); }
   };
 
-  const togglePerm = (key) => {
+  /* ── perm helpers ── */
+  const togglePerm = (key) =>
+    setForm((prev) => ({ ...prev, permissions: { ...prev.permissions, [key]: !prev.permissions[key] } }));
+
+  const allGranted = ALL_PERMISSIONS.every((p) => form.permissions[p.key]);
+  const grantAll = () => {
+    const next = !allGranted;
     setForm((prev) => ({
       ...prev,
-      permissions: { ...prev.permissions, [key]: !prev.permissions[key] },
+      permissions: { ...prev.permissions, ...Object.fromEntries(ALL_PERMISSIONS.map((p) => [p.key, next])) },
     }));
   };
 
+  /* ════════════════════════════════════════════════════════ */
   return (
     <div className="pb-20">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+
+      {/* ── Page Header ── */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-8 mt-2">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            <Users size={22} className="text-green-600" /> Employee Management
+            <span className="w-9 h-9 rounded-xl bg-emerald-600 flex items-center justify-center">
+              <Users size={18} className="text-white" />
+            </span>
+            Employee Management
           </h1>
-          <p className="text-slate-500 text-sm mt-1">Manage staff access and permissions</p>
+          <p className="text-slate-500 text-sm mt-1 ml-11">Manage staff access and permissions</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={fetchEmployees}
-            className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50"
+            className="flex items-center gap-1.5 px-3.5 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 transition"
           >
             <RefreshCw size={14} /> Refresh
           </button>
           <button
             onClick={openCreate}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm"
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-sm shadow-emerald-200 transition"
           >
             <Plus size={16} /> Add Employee
           </button>
         </div>
       </div>
 
-      {/* Table */}
+      {/* ── Table ── */}
       {loading ? (
         <div className="flex items-center justify-center py-20 gap-2 text-slate-400">
-          <Loader2 size={20} className="animate-spin" /> Loading...
+          <Loader2 size={20} className="animate-spin" /> Loading employees…
         </div>
       ) : employees.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-xl border border-slate-200 shadow-sm">
-          <Users size={48} className="mx-auto text-slate-300 mb-3" />
-          <p className="text-slate-600 font-medium">No employees yet</p>
-          <p className="text-slate-400 text-sm mt-1">Add your first employee to get started</p>
+        <div className="text-center py-24 bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Users size={28} className="text-slate-400" />
+          </div>
+          <p className="text-slate-700 font-semibold">No employees yet</p>
+          <p className="text-slate-400 text-sm mt-1">Add your first team member to get started</p>
           <button
             onClick={openCreate}
-            className="mt-4 inline-flex items-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700"
+            className="mt-5 inline-flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-700 transition shadow-sm shadow-emerald-100"
           >
             <Plus size={16} /> Add Employee
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   {['Employee', 'Role', 'Permissions', 'Status', 'Joined', 'Actions'].map((h) => (
-                    <th
-                      key={h}
-                      className="text-left px-5 py-3.5 font-medium text-slate-500 text-xs uppercase tracking-wide"
-                    >
+                    <th key={h} className="text-left px-5 py-3.5 font-semibold text-slate-400 text-xs uppercase tracking-wider">
                       {h}
                     </th>
                   ))}
@@ -272,19 +313,24 @@ export default function EmployeesPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {employees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-slate-50/60 transition-colors">
+                  <tr key={emp.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-5 py-4">
-                      <div>
-                        <p className="font-medium text-slate-800">{emp.name}</p>
-                        <p className="text-xs text-slate-400">{emp.email}</p>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-sm font-bold text-slate-500 flex-shrink-0">
+                          {emp.name?.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-800 leading-tight">{emp.name}</p>
+                          <p className="text-xs text-slate-400">{emp.email}</p>
+                        </div>
                       </div>
                     </td>
                     <td className="px-5 py-4">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${
                           emp.role === 'STORE_OWNER'
-                            ? 'bg-purple-100 text-purple-700'
-                            : 'bg-blue-100 text-blue-700'
+                            ? 'bg-violet-100 text-violet-700'
+                            : 'bg-sky-100 text-sky-700'
                         }`}
                       >
                         {emp.role === 'STORE_OWNER' ? <ShieldCheck size={11} /> : <ShieldAlert size={11} />}
@@ -297,9 +343,9 @@ export default function EmployeesPage() {
                     <td className="px-5 py-4">
                       <button
                         onClick={() => handleToggleActive(emp)}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
                           emp.isActive
-                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                             : 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
                         }`}
                       >
@@ -307,15 +353,13 @@ export default function EmployeesPage() {
                       </button>
                     </td>
                     <td className="px-5 py-4 text-xs text-slate-400">
-                      {new Date(emp.createdAt).toLocaleDateString('en-IN', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                      })}
+                      {new Date(emp.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => openEdit(emp)}
-                          className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200 transition"
+                          className="p-2 bg-sky-50 text-sky-600 rounded-lg hover:bg-sky-100 border border-sky-200 transition"
                           title="Edit"
                         >
                           <Pencil size={14} />
@@ -337,146 +381,136 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Create / Edit Modal */}
+      {/* ════════════════════════════════════════════════════════
+          Create / Edit Modal
+      ════════════════════════════════════════════════════════ */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-8">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
-              <h2 className="text-lg font-semibold text-slate-800">
-                {editingEmployee ? 'Edit Employee' : 'Add Employee'}
-              </h2>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl my-8 flex flex-col">
+
+            {/* ── Modal Header ── */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100">
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-0.5">
+                  Employee management
+                </p>
+                <h2 className="text-lg font-bold text-slate-800">
+                  {editingEmployee ? 'Edit Employee' : 'Add New Employee'}
+                </h2>
+              </div>
               <button
                 onClick={() => setModalOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+                className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 transition"
               >
-                <X size={18} />
+                <X size={17} />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-5">
-              {/* Name */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Full Name</label>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Ravi Kumar"
-                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400"
-                />
-              </div>
+            {/* ── Modal Body ── */}
+            <div className="p-6 flex flex-col gap-5 overflow-y-auto">
 
-              {/* Email */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Email</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  placeholder="ravi@store.com"
-                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400"
-                />
-              </div>
-
-              {/* Password */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Password{' '}
-                  {editingEmployee && (
-                    <span className="text-slate-400 font-normal text-xs">(leave blank to keep current)</span>
-                  )}
-                </label>
-                <div className="relative">
+              {/* Row 1: Name + Role */}
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Full Name">
                   <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    placeholder="••••••••"
-                    className="w-full px-3.5 pr-10 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Ravi Kumar"
+                    className={inputCls}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                </Field>
+                <Field label="Role">
+                  <select
+                    value={form.role}
+                    onChange={(e) => setForm({ ...form, role: e.target.value })}
+                    className={inputCls + ' bg-slate-50'}
                   >
-                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
+                    <option value="EMPLOYEE">Employee</option>
+                    <option value="STORE_OWNER">Store Owner</option>
+                  </select>
+                </Field>
               </div>
 
-              {/* Role */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">Role</label>
-                <select
-                  value={form.role}
-                  onChange={(e) => setForm({ ...form, role: e.target.value })}
-                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-100 bg-white"
+              {/* Row 2: Email + Password */}
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Email">
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="ravi@store.com"
+                    className={inputCls}
+                  />
+                </Field>
+                <Field
+                  label="Password"
+                  hint={editingEmployee ? 'Leave blank to keep current' : undefined}
                 >
-                  <option value="EMPLOYEE">Employee</option>
-                  <option value="STORE_OWNER">Store Owner</option>
-                </select>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setForm({ ...form, password: e.target.value })}
+                      placeholder="••••••••"
+                      className={inputCls + ' pr-10'}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition"
+                    >
+                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </Field>
               </div>
 
-              {/* Permissions — only for EMPLOYEE role */}
+              {/* Permissions — only for EMPLOYEE */}
               {form.role === 'EMPLOYEE' && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-3">Permissions</label>
-                  <div className="grid grid-cols-1 gap-2.5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Permissions</span>
+                    <button
+                      onClick={grantAll}
+                      className={`text-xs font-semibold px-3 py-1 rounded-lg border transition ${
+                        allGranted
+                          ? 'border-red-200 text-red-600 bg-red-50 hover:bg-red-100'
+                          : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {allGranted ? 'Revoke All' : 'Grant All'}
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
                     {ALL_PERMISSIONS.map((perm) => (
-                      <div
+                      <PermCard
                         key={perm.key}
-                        onClick={() => togglePerm(perm.key)}
-                        className={`flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition-all ${
-                          form.permissions[perm.key]
-                            ? 'border-green-400 bg-green-50 shadow-sm'
-                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        {/* Checkbox */}
-                        <div
-                          className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                            form.permissions[perm.key]
-                              ? 'bg-green-600 border-green-600'
-                              : 'border-slate-300 bg-white'
-                          }`}
-                        >
-                          {form.permissions[perm.key] && <Check size={12} className="text-white" />}
-                        </div>
-                        {/* Text */}
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-slate-700">{perm.label}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">{perm.desc}</p>
-                        </div>
-                        {/* Status pill */}
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
-                            form.permissions[perm.key]
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-slate-100 text-slate-400'
-                          }`}
-                        >
-                          {form.permissions[perm.key] ? 'Allowed' : 'Denied'}
-                        </span>
-                      </div>
+                        perm={perm}
+                        checked={!!form.permissions[perm.key]}
+                        onToggle={() => togglePerm(perm.key)}
+                      />
                     ))}
                   </div>
+                  {/* Summary pill */}
+                  <p className="text-xs text-slate-400 mt-3 text-right">
+                    {ALL_PERMISSIONS.filter((p) => form.permissions[p.key]).length} of {ALL_PERMISSIONS.length} permissions granted
+                  </p>
                 </div>
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-white rounded-b-2xl">
+            {/* ── Modal Footer ── */}
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
               <button
                 onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition"
+                className="px-4 py-2.5 text-sm font-medium border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-100 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-5 py-2 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium disabled:opacity-60 flex items-center gap-2 transition"
+                className="px-5 py-2.5 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl disabled:opacity-60 flex items-center gap-2 transition shadow-sm shadow-emerald-200"
               >
                 {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {editingEmployee ? 'Save Changes' : 'Create Employee'}
@@ -486,27 +520,31 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Delete Confirm */}
+      {/* ════════════════════════════════════════════════════════
+          Delete Confirm Modal
+      ════════════════════════════════════════════════════════ */}
       {deleteId && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Trash2 size={28} className="text-red-500" />
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-sm w-full text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={26} className="text-red-500" />
             </div>
-            <h3 className="text-lg font-semibold text-slate-800 mb-2">Delete Employee?</h3>
-            <p className="text-slate-500 text-sm mb-6">This action cannot be undone.</p>
-            <div className="flex justify-center gap-3">
+            <h3 className="text-lg font-bold text-slate-800 mb-1.5">Delete Employee?</h3>
+            <p className="text-slate-500 text-sm mb-7 leading-relaxed">
+              This will permanently remove the employee and revoke all their access. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
               <button
                 onClick={() => setDeleteId(null)}
-                className="px-5 py-2 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50"
+                className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium"
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition shadow-sm shadow-red-100"
               >
-                Delete
+                Yes, Delete
               </button>
             </div>
           </div>
