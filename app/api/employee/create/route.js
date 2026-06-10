@@ -4,43 +4,57 @@ import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { getAuth } from '@clerk/nextjs/server';
 import authSeller from '@/middlewares/authSeller';
-import { verifyEmployeeToken } from '@/middlewares/authEmployee';
+import { PERMISSIONS } from '@/middlewares/authEmployee';
 
+// POST /api/employee/create — Store owner ONLY (employees cannot create employees)
 export async function POST(request) {
   try {
-    // Allow Clerk store owners OR employee JWT with STORE_OWNER role
-    let storeId = null;
-    let actorRole = null;
-
     const { userId } = getAuth(request);
-    if (userId) {
-      storeId = await authSeller(userId);
-      actorRole = 'STORE_OWNER';
-    }
+    if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
+    // Only Clerk-authenticated store owners can create employees
+    const storeId = await authSeller(userId);
     if (!storeId) {
-      const emp = verifyEmployeeToken(request);
-      if (emp && emp.role === 'STORE_OWNER') {
-        storeId = emp.storeId;
-        actorRole = 'STORE_OWNER';
-      }
-    }
-
-    // Allow ADMIN (Clerk admin check)
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Only store owners can create employees' },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();
-    const { name, email, password, role = 'EMPLOYEE', permissions = {} } = body;
+    const { name, email, password, permissions = {} } = body;
 
     if (!name || !email || !password) {
-      return NextResponse.json({ error: 'Name, email and password are required' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Name, email and password are required' },
+        { status: 400 }
+      );
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
+    }
+
+    if (password.length < 6) {
+      return NextResponse.json(
+        { error: 'Password must be at least 6 characters' },
+        { status: 400 }
+      );
+    }
+
+    // Check email not already used
     const existing = await prisma.employee.findUnique({ where: { email } });
     if (existing) {
       return NextResponse.json({ error: 'Email already registered' }, { status: 400 });
+    }
+
+    // Sanitize permissions — only allow valid keys, force boolean values
+    const validKeys = Object.values(PERMISSIONS);
+    const sanitizedPermissions = {};
+    for (const key of validKeys) {
+      sanitizedPermissions[key] = permissions[key] === true;
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -51,15 +65,22 @@ export async function POST(request) {
         email,
         password: hashedPassword,
         storeId,
-        role,
-        permissions,
+        permissions: sanitizedPermissions,
         isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        permissions: true,
+        isActive: true,
+        createdAt: true,
+        storeId: true,
       },
     });
 
-    const { password: _, ...safeEmployee } = employee;
     return NextResponse.json(
-      { message: 'Employee created successfully', employee: safeEmployee },
+      { message: 'Employee created successfully', employee },
       { status: 201 }
     );
   } catch (error) {

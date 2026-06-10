@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\admin\AdminLayout.jsx
 'use client'
 import { useEffect, useState } from "react"
 import Loading from "../Loading"

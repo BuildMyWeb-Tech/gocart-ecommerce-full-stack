@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\RatingModal.jsx
 'use client'
 
 import { Star } from 'lucide-react';

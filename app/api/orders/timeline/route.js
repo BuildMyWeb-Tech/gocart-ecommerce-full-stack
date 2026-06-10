@@ -1,38 +1,49 @@
 // app/api/orders/timeline/route.js
-// GET /api/orders/timeline?orderId=xxx  — get full timeline for an order
-
 import prisma from '@/lib/prisma';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import authSeller from '@/middlewares/authSeller';
 import authAdmin from '@/middlewares/authAdmin';
+import verifyEmployeeToken from '@/middlewares/authEmployee';
 
+// GET /api/orders/timeline?orderId=xxx
 export async function GET(request) {
   try {
-    const { userId } = getAuth(request);
-    if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get('orderId');
-
     if (!orderId) return NextResponse.json({ error: 'orderId is required' }, { status: 400 });
 
-    // ── Determine access ──────────────────────────────────────────
-    const isAdmin = await authAdmin(userId);
-    const storeId = isAdmin ? null : await authSeller(userId);
+    const employee = verifyEmployeeToken(request);
+    const { userId } = getAuth(request);
 
-    if (!isAdmin && !storeId) {
-      // Could be a buyer — verify the order belongs to them
+    let authorized = false;
+
+    if (employee) {
+      // Employee: verify order belongs to their store
       const order = await prisma.order.findFirst({
-        where: { id: orderId, userId },
+        where: { id: orderId, storeId: employee.storeId },
       });
-      if (!order) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
-    } else if (storeId) {
-      // Store: verify order belongs to their store
-      const order = await prisma.order.findFirst({
-        where: { id: orderId, storeId },
-      });
-      if (!order) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+      authorized = !!order;
+    } else if (userId) {
+      const isAdminUser = await authAdmin(userId);
+      if (isAdminUser) {
+        authorized = true;
+      } else {
+        // Could be store owner
+        const storeId = await authSeller(userId);
+        if (storeId) {
+          const order = await prisma.order.findFirst({ where: { id: orderId, storeId } });
+          authorized = !!order;
+        } else {
+          // Could be a buyer
+          const order = await prisma.order.findFirst({ where: { id: orderId, userId } });
+          authorized = !!order;
+        }
+      }
+    }
+
+    if (!authorized) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const timeline = await prisma.orderTimeline.findMany({

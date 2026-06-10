@@ -32,6 +32,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import Image from 'next/image';
+import { PERMISSIONS } from '@/middlewares/authEmployee';
 
 const PERIODS = [
   { value: 'today', label: 'Today' },
@@ -157,13 +158,13 @@ export default function EmployeeReportsPage() {
   const [pageReady, setPageReady] = useState(false);
 
   useEffect(() => {
-    const empData = localStorage.getItem('empData');
-    const empToken = localStorage.getItem('empToken');
+    const empData  = localStorage.getItem('employeeData');
+    const empToken = localStorage.getItem('employeeToken');
     if (!empData || !empToken) return;
     const parsed = JSON.parse(empData);
     setEmployee(parsed);
     setToken(empToken);
-    const hasAccess = parsed.role === 'STORE_OWNER' || parsed.permissions?.reports === true;
+    const hasAccess = parsed.isOwner === true || parsed.permissions?.[PERMISSIONS.VIEW_REPORTS] === true;
     setAllowed(hasAccess);
     setPageReady(true);
   }, []);

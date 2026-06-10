@@ -5,22 +5,47 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { JWT_SECRET_KEY } from '@/middlewares/authEmployee';
 
+// POST /api/employee/login — Employee login with email + password
 export async function POST(request) {
   try {
     const { email, password } = await request.json();
 
     if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password required' }, { status: 400 });
+      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    const employee = await prisma.employee.findUnique({ where: { email } });
+    const employee = await prisma.employee.findUnique({
+      where: { email },
+      include: {
+        store: {
+          select: {
+            id: true,
+            name: true,
+            logo: true,
+            status: true,
+            isActive: true,
+          },
+        },
+      },
+    });
 
     if (!employee) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
     if (!employee.isActive) {
-      return NextResponse.json({ error: 'Account is deactivated. Contact your store owner.' }, { status: 403 });
+      return NextResponse.json(
+        { error: 'Your account has been deactivated. Contact your store owner.' },
+        { status: 403 }
+      );
+    }
+
+    // Store must be active
+    if (employee.store.status !== 'ACTIVE' || !employee.store.isActive) {
+      return NextResponse.json(
+        { error: 'Store is not active. Contact your store owner.' },
+        { status: 403 }
+      );
     }
 
     const isValid = await bcrypt.compare(password, employee.password);
@@ -28,15 +53,14 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 
-    // Sign JWT with role + permissions inside
+    // JWT payload — no role, permissions are the source of truth
     const token = jwt.sign(
       {
-        id: employee.id,
-        role: employee.role,
+        employeeId: employee.id,
         storeId: employee.storeId,
-        permissions: employee.permissions,
         name: employee.name,
         email: employee.email,
+        permissions: employee.permissions,
       },
       JWT_SECRET_KEY,
       { expiresIn: '7d' }

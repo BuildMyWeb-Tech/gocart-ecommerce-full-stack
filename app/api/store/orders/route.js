@@ -1,193 +1,91 @@
 // app/api/store/orders/route.js
 import prisma from '@/lib/prisma';
 import authSeller from '@/middlewares/authSeller';
-import { verifyEmployeeToken } from '@/middlewares/authEmployee';
+import verifyEmployeeToken, { hasPermission, PERMISSIONS } from '@/middlewares/authEmployee';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-const STORE_ALLOWED_TRANSITIONS = {
-  ORDER_PLACED: ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED: ['PROCESSING', 'CANCELLED'],
-  PROCESSING: ['SHIPPED', 'CANCELLED'],
-  SHIPPED: ['DELIVERED'],
-  DELIVERED: ['RETURN_REQUESTED'],
-  RETURN_REQUESTED: ['RETURNED'],
-  RETURNED: ['REFUNDED'],
-  CANCELLED: [],
-  REFUNDED: [],
+const STORE_TRANSITIONS = {
+  PENDING:          ['CONFIRMED', 'CANCELLED'],
+  CONFIRMED:        ['PACKED', 'CANCELLED'],
+  PACKED:           ['SHIPPED', 'CANCELLED'],
+  SHIPPED:          ['OUT_FOR_DELIVERY'],
+  OUT_FOR_DELIVERY: ['DELIVERED'],
+  DELIVERED:        ['RETURNED'],
+  CANCELLED:        [],
+  RETURNED:         [],
 };
 
-const PRE_SHIPPED_STATUSES = new Set(['ORDER_PLACED', 'CONFIRMED', 'PROCESSING']);
+const PRE_SHIPPED = new Set(['PENDING', 'CONFIRMED', 'PACKED']);
 
-// ── Helper: resolve storeId from employee JWT or Clerk ────────────
-async function resolveStoreId(request) {
-  const emp = verifyEmployeeToken(request);
-  if (emp?.storeId) return emp.storeId;
+async function resolveStoreAuth(request) {
+  const employee = verifyEmployeeToken(request);
+  if (employee) return { storeId: employee.storeId, employee, source: 'employee' };
 
   const { userId } = getAuth(request);
-  if (!userId) return null;
-  return authSeller(userId);
+  if (!userId) return { storeId: null };
+  const storeId = await authSeller(userId);
+  return { storeId, source: 'owner' };
 }
 
-// ── Helper: restore inventory on cancel/return ────────────────────
-// FIX: Now updates BOTH Product table AND Inventory table
 async function restoreInventory(tx, orderId) {
-  // Get order storeId + all items in one query
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: {
       storeId: true,
-      orderItems: {
-        select: { productId: true, quantity: true },
-      },
+      orderItems: { select: { variantId: true, quantity: true } },
     },
   });
-
   if (!order) return;
 
   for (const item of order.orderItems) {
-    // 1. Get current product quantity
-    const product = await tx.product.findUnique({
-      where: { id: item.productId },
-      select: { quantity: true },
+    const variant = await tx.productVariant.findUnique({
+      where: { id: item.variantId },
+      select: { stock: true },
+    });
+    if (!variant) continue;
+
+    const newStock = variant.stock + item.quantity;
+
+    await tx.productVariant.update({
+      where: { id: item.variantId },
+      data: { stock: newStock },
     });
 
-    if (!product) continue;
-
-    const newQty = product.quantity + item.quantity;
-
-    // 2. Update Product table → Manage Products page reads this ✅
-    await tx.product.update({
-      where: { id: item.productId },
-      data: { quantity: newQty, inStock: newQty > 0 },
-    });
-
-    // 3. Update Inventory table → Inventory page reads this ✅
-    //    Use findFirst + update by id (safer than updateMany)
-    const invRecord = await tx.inventory.findFirst({
-      where: {
-        productId: item.productId,
+    await tx.inventory.upsert({
+      where: { variantId: item.variantId },
+      update: { quantity: newStock },
+      create: {
+        variantId: item.variantId,
         storeId: order.storeId,
+        quantity: newStock,
+        lowStock: 10,
       },
-      select: { id: true },
     });
-
-    if (invRecord) {
-      await tx.inventory.update({
-        where: { id: invRecord.id },
-        data: { quantity: newQty },
-      });
-    } else {
-      // Safety net: create inventory record if missing
-      await tx.inventory.create({
-        data: {
-          productId: item.productId,
-          storeId: order.storeId,
-          quantity: newQty,
-          lowStock: 10,
-        },
-      });
-    }
   }
 }
 
-// ── POST: update order status ─────────────────────────────────────
-export async function POST(request) {
-  try {
-    const storeId = await resolveStoreId(request);
-
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
-    }
-
-    const { orderId, status, note } = await request.json();
-
-    if (!orderId || !status) {
-      return NextResponse.json({ error: 'orderId and status are required' }, { status: 400 });
-    }
-
-    const order = await prisma.order.findFirst({
-      where: { id: orderId, storeId },
-      select: { id: true, status: true, storeId: true },
-    });
-
-    if (!order) {
-      return NextResponse.json({ error: 'Order not found or not authorized' }, { status: 404 });
-    }
-
-    const currentStatus = order.status;
-    const allowed = STORE_ALLOWED_TRANSITIONS[currentStatus] || [];
-
-    if (!allowed.includes(status)) {
-      return NextResponse.json(
-        {
-          error: `Cannot transition from ${currentStatus} to ${status}. Allowed: ${
-            allowed.join(', ') || 'none'
-          }`,
-        },
-        { status: 400 }
-      );
-    }
-
-    if (status === 'CANCELLED' && !PRE_SHIPPED_STATUSES.has(currentStatus)) {
-      return NextResponse.json(
-        { error: 'Orders can only be cancelled before they are shipped' },
-        { status: 400 }
-      );
-    }
-
-    await prisma.$transaction(async (tx) => {
-      await tx.order.update({
-        where: { id: orderId },
-        data: { status },
-      });
-
-      await tx.orderTimeline.create({
-        data: {
-          orderId,
-          status,
-          changedBy: 'STORE',
-          note: note || null,
-        },
-      });
-
-      // Restore stock in BOTH Product + Inventory tables on cancel/return
-      if (status === 'CANCELLED' || status === 'RETURNED') {
-        await restoreInventory(tx, orderId);
-      }
-    });
-
-    return NextResponse.json({
-      message: 'Order status updated',
-      inventoryRestored: ['CANCELLED', 'RETURNED'].includes(status),
-    });
-  } catch (error) {
-    console.error('POST /api/store/orders error:', error);
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-}
-
-// ── GET: fetch all orders for this store ──────────────────────────
+// GET /api/store/orders — Store's own orders
 export async function GET(request) {
   try {
-    const storeId = await resolveStoreId(request);
+    const { storeId, employee, source } = await resolveStoreAuth(request);
+    if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    if (source === 'employee' && !hasPermission(employee, PERMISSIONS.VIEW_ORDERS)) {
+      return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
     const statusFilter = searchParams.get('status');
-    const dateFrom = searchParams.get('dateFrom');
-    const dateTo = searchParams.get('dateTo');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const dateFrom     = searchParams.get('dateFrom');
+    const dateTo       = searchParams.get('dateTo');
+    const search       = searchParams.get('search');
+    const page         = Math.max(1, parseInt(searchParams.get('page') || '1'));
+    const limit        = Math.min(100, parseInt(searchParams.get('limit') || '20'));
 
     const where = { storeId };
 
-    if (statusFilter && statusFilter !== 'all') {
-      where.status = statusFilter;
-    }
+    if (statusFilter && statusFilter !== 'ALL') where.status = statusFilter;
 
     if (dateFrom || dateTo) {
       where.createdAt = {};
@@ -195,13 +93,29 @@ export async function GET(request) {
       if (dateTo) where.createdAt.lte = new Date(dateTo);
     }
 
+    if (search) {
+      where.OR = [
+        { id: { contains: search, mode: 'insensitive' } },
+        { user: { name: { contains: search, mode: 'insensitive' } } },
+      ];
+    }
+
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
         where,
         include: {
-          user: true,
+          user: { select: { id: true, name: true, email: true, image: true } },
           address: true,
-          orderItems: { include: { product: true } },
+          orderItems: {
+            include: {
+              variant: {
+                select: {
+                  id: true, color: true, size: true, price: true, sku: true,
+                  product: { select: { id: true, name: true, images: true } },
+                },
+              },
+            },
+          },
           timeline: { orderBy: { createdAt: 'asc' } },
         },
         orderBy: { createdAt: 'desc' },
@@ -214,6 +128,71 @@ export async function GET(request) {
     return NextResponse.json({ orders, total, page, limit });
   } catch (error) {
     console.error('GET /api/store/orders error:', error);
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+}
+
+// POST /api/store/orders — Update order status
+export async function POST(request) {
+  try {
+    const { storeId, employee, source } = await resolveStoreAuth(request);
+    if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (source === 'employee' && !hasPermission(employee, PERMISSIONS.UPDATE_ORDER_STATUS)) {
+      return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+    }
+
+    const { orderId, status, note } = await request.json();
+
+    if (!orderId || !status) {
+      return NextResponse.json({ error: 'orderId and status are required' }, { status: 400 });
+    }
+
+    const order = await prisma.order.findFirst({
+      where: { id: orderId, storeId },
+      select: { id: true, status: true },
+    });
+
+    if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+
+    const allowed = STORE_TRANSITIONS[order.status] || [];
+
+    if (!allowed.includes(status)) {
+      return NextResponse.json(
+        {
+          error: `Cannot transition from ${order.status} to ${status}. Allowed: ${
+            allowed.join(', ') || 'none'
+          }`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (status === 'CANCELLED' && !PRE_SHIPPED.has(order.status)) {
+      return NextResponse.json(
+        { error: 'Orders can only be cancelled before they are shipped' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.order.update({ where: { id: orderId }, data: { status } });
+
+      await tx.orderTimeline.create({
+        data: { orderId, status, changedBy: 'STORE', note: note || null },
+      });
+
+      if (status === 'CANCELLED' || status === 'RETURNED') {
+        await restoreInventory(tx, orderId);
+      }
+    });
+
+    return NextResponse.json({
+      message: `Order updated to ${status}`,
+      inventoryRestored: ['CANCELLED', 'RETURNED'].includes(status),
+    });
+  } catch (error) {
+    console.error('POST /api/store/orders error:', error);
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 }

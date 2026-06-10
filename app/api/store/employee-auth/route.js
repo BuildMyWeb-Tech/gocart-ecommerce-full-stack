@@ -3,15 +3,10 @@ import prisma from '@/lib/prisma';
 import { verifyEmployeeToken } from '@/middlewares/authEmployee';
 import { NextResponse } from 'next/server';
 
+// GET /api/store/employee-auth — Validate employee JWT and return fresh DB data
 export async function GET(request) {
   try {
-    // Debug: log what header we receive
-    const authHeader = request.headers.get('authorization') || '';
-    console.log('employee-auth: Authorization header:', authHeader ? 'PRESENT' : 'MISSING');
-    console.log('employee-auth: Header value:', authHeader.slice(0, 30) + '...');
-
     const decoded = verifyEmployeeToken(request);
-    console.log('employee-auth: decoded token:', decoded ? 'OK' : 'FAILED');
 
     if (!decoded) {
       return NextResponse.json(
@@ -20,55 +15,54 @@ export async function GET(request) {
       );
     }
 
-    // Re-verify from DB
-    const dbEmployee = await prisma.employee.findUnique({
-      where: { id: decoded.id },
+    // Re-fetch from DB to get latest permissions + status
+    const employee = await prisma.employee.findUnique({
+      where: { id: decoded.employeeId },
       select: {
         id: true,
         name: true,
         email: true,
-        role: true,
         permissions: true,
         isActive: true,
         storeId: true,
+        store: {
+          select: {
+            id: true,
+            name: true,
+            logo: true,
+            username: true,
+            status: true,
+            isActive: true,
+          },
+        },
       },
     });
 
-    if (!dbEmployee) {
-      return NextResponse.json(
-        { valid: false, error: 'Account not found' },
-        { status: 404 }
-      );
+    if (!employee) {
+      return NextResponse.json({ valid: false, error: 'Account not found' }, { status: 404 });
     }
 
-    if (!dbEmployee.isActive) {
+    if (!employee.isActive) {
       return NextResponse.json(
         { valid: false, error: 'Account has been deactivated' },
         { status: 403 }
       );
     }
 
-    const store = await prisma.store.findUnique({
-      where: { id: dbEmployee.storeId },
-    });
-
-    if (!store || store.status !== 'approved') {
+    if (employee.store.status !== 'ACTIVE' || !employee.store.isActive) {
       return NextResponse.json(
-        { valid: false, error: 'Store not found or not approved' },
+        { valid: false, error: 'Store is not active' },
         { status: 403 }
       );
     }
 
     return NextResponse.json({
       valid: true,
-      employee: dbEmployee,
-      store,
+      employee,
+      store: employee.store,
     });
   } catch (error) {
     console.error('GET /api/store/employee-auth error:', error);
-    return NextResponse.json(
-      { valid: false, error: error.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ valid: false, error: error.message }, { status: 500 });
   }
 }

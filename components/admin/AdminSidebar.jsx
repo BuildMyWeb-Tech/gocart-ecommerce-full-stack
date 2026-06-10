@@ -7,30 +7,25 @@ import {
   Store,
   CheckSquare,
   Layers,
-  Ticket,
-  PlusCircle,
-  PackageSearch,
   BarChart2,
-  Package,
+  ShoppingBag,
+  Settings2,
 } from 'lucide-react';
 
 const navLinks = [
-  { label: 'Dashboard', href: '/admin', icon: LayoutDashboard },
-  { label: 'Stores', href: '/admin/stores', icon: Store },
-  { label: 'Approve', href: '/admin/approve', icon: CheckSquare },
-  { label: 'Categories', href: '/admin/categories', icon: Layers },
-  { label: 'Add Product', href: '/admin/add-product', icon: PlusCircle },
-  { label: 'Manage Products', href: '/admin/manage-product', icon: PackageSearch },
-  { label: 'Inventory', href: '/admin/inventory', icon: Package },
-  { label: 'Coupons', href: '/admin/coupons', icon: Ticket },
+  { label: 'Dashboard',    href: '/admin',              icon: LayoutDashboard },
+  { label: 'Stores',       href: '/admin/stores',       icon: Store },
+  { label: 'Approve',      href: '/admin/approve',      icon: CheckSquare },
+  { label: 'Categories',   href: '/admin/categories',   icon: Layers },
+  { label: 'Orders',       href: '/admin/orders',       icon: ShoppingBag },
   { label: 'Sales Report', href: '/admin/sales-report', icon: BarChart2 },
 ];
 
-export default function AdminSidebar() {
+export default function AdminSidebar({ setSidebarOpen }) {
   const pathname = usePathname();
 
   return (
-    <aside className="w-60 min-h-screen bg-white border-r border-slate-100 flex flex-col py-6 px-3">
+    <aside className="admin-sidebar w-60 min-h-screen bg-white border-r border-slate-100 flex flex-col py-6 px-3">
       <div className="mb-8 px-3">
         <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
           Admin Panel
@@ -38,11 +33,13 @@ export default function AdminSidebar() {
       </div>
       <nav className="flex flex-col gap-1">
         {navLinks.map(({ label, href, icon: Icon }) => {
-          const isActive = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
+          const isActive =
+            href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
+              onClick={() => setSidebarOpen?.(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
                   ? 'bg-green-50 text-green-700'

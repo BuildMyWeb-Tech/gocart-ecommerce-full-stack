@@ -1,83 +1,90 @@
 // app/employee/dashboard/page.jsx
 'use client';
 import { useEffect, useState } from 'react';
-import { ShoppingBag, Package, CreditCard, BarChart2, ShieldCheck, Layers, PackageOpen } from 'lucide-react';
+import {
+  ShoppingBag, Package, BarChart2, ShieldCheck, Layers,
+  PackageOpen, Pencil, PlusCircle, Settings,
+} from 'lucide-react';
 import Link from 'next/link';
+import { PERMISSIONS } from '@/middlewares/authEmployee';
 
 export default function EmployeeDashboard() {
-  const [employee, setEmployee] = useState(null);
+  const [employee,  setEmployee]  = useState(null);
   const [storeInfo, setStoreInfo] = useState(null);
 
   useEffect(() => {
-    const empData = localStorage.getItem('empData');
+    // Use the same keys as the login API
+    const empData  = localStorage.getItem('employeeData');
+    const storeRaw = localStorage.getItem('employeeStore');
+
     if (empData) {
-      const parsed = JSON.parse(empData);
-      setEmployee(parsed);
-      if (parsed.storeName) {
-        setStoreInfo({ name: parsed.storeName, logo: parsed.storeLogo });
-      }
+      setEmployee(JSON.parse(empData));
+    }
+    if (storeRaw) {
+      setStoreInfo(JSON.parse(storeRaw));
     }
   }, []);
 
   if (!employee) return null;
 
   const permissions = employee.permissions || {};
-  const isOwner = employee.role === 'STORE_OWNER';
+  const isOwner     = employee.isOwner === true;
 
+  // Module definitions — key matches PERMISSIONS constant
   const allModules = [
     {
-      key: 'billing',
-      name: 'Billing',
-      desc: 'Create bills and process payments',
-      href: '/employee/billing',
-      icon: CreditCard,
-      color: 'bg-green-50 border-green-200 text-green-700',
-      iconColor: 'bg-green-100 text-green-600',
+      key:      PERMISSIONS.ADD_PRODUCT,
+      name:     'Add Product',
+      desc:     'Create new products',
+      href:     '/employee/add-product',
+      icon:     PlusCircle,
+      color:    'bg-green-50 border-green-200 text-green-700',
+      iconColor:'bg-green-100 text-green-600',
     },
     {
-      key: 'orders',
-      name: 'Orders',
-      desc: 'View and manage customer orders',
-      href: '/employee/orders',
-      icon: ShoppingBag,
-      color: 'bg-blue-50 border-blue-200 text-blue-700',
-      iconColor: 'bg-blue-100 text-blue-600',
+      key:      PERMISSIONS.EDIT_PRODUCT,
+      name:     'Manage Products',
+      desc:     'View and update products',
+      href:     '/employee/manage-product',
+      icon:     PackageOpen,
+      color:    'bg-indigo-50 border-indigo-200 text-indigo-700',
+      iconColor:'bg-indigo-100 text-indigo-600',
     },
     {
-      key: 'inventory',
-      name: 'Inventory',
-      desc: 'Check product stock levels',
-      href: '/employee/inventory',
-      icon: Package,
-      color: 'bg-amber-50 border-amber-200 text-amber-700',
-      iconColor: 'bg-amber-100 text-amber-600',
+      key:      PERMISSIONS.MANAGE_INVENTORY,
+      name:     'Inventory',
+      desc:     'Check product stock levels',
+      href:     '/employee/inventory',
+      icon:     Package,
+      color:    'bg-amber-50 border-amber-200 text-amber-700',
+      iconColor:'bg-amber-100 text-amber-600',
     },
     {
-      key: 'reports',
-      name: 'Reports',
-      desc: 'View sales and analytics reports',
-      href: '/employee/reports',
-      icon: BarChart2,
-      color: 'bg-purple-50 border-purple-200 text-purple-700',
-      iconColor: 'bg-purple-100 text-purple-600',
+      key:      PERMISSIONS.VIEW_ORDERS,
+      name:     'Orders',
+      desc:     'View and manage customer orders',
+      href:     '/employee/orders',
+      icon:     ShoppingBag,
+      color:    'bg-blue-50 border-blue-200 text-blue-700',
+      iconColor:'bg-blue-100 text-blue-600',
     },
     {
-      key: 'product_categories',
-      name: 'Categories',
-      desc: 'View product categories',
-      href: '/employee/categories',
-      icon: Layers,
-      color: 'bg-teal-50 border-teal-200 text-teal-700',
-      iconColor: 'bg-teal-100 text-teal-600',
+      key:      PERMISSIONS.MANAGE_CATEGORIES,
+      name:     'Categories',
+      desc:     'View and manage categories',
+      href:     '/employee/categories',
+      icon:     Layers,
+      color:    'bg-teal-50 border-teal-200 text-teal-700',
+      iconColor:'bg-teal-100 text-teal-600',
     },
     {
-      key: 'manage_product',
-      name: 'Products',
-      desc: 'View all listed products',
-      href: '/employee/manage-product',
-      icon: PackageOpen,
-      color: 'bg-indigo-50 border-indigo-200 text-indigo-700',
-      iconColor: 'bg-indigo-100 text-indigo-600',
+      key:      PERMISSIONS.VIEW_REPORTS,
+      name:     'Reports',
+      desc:     'View sales and analytics',
+      href:     '/employee/reports',
+      icon:     BarChart2,
+      color:    'bg-purple-50 border-purple-200 text-purple-700',
+      iconColor:'bg-purple-100 text-purple-600',
     },
   ];
 
@@ -85,11 +92,7 @@ export default function EmployeeDashboard() {
     (m) => isOwner || permissions[m.key] === true
   );
 
-  // All permission keys including the new ones
-  const allPermissionKeys = [
-    'billing', 'inventory', 'orders', 'reports', 'settings',
-    'product_categories', 'manage_product',
-  ];
+  const allPermissionKeys = Object.values(PERMISSIONS);
 
   return (
     <div className="space-y-6 pb-20">
@@ -100,7 +103,7 @@ export default function EmployeeDashboard() {
             Welcome back, {employee.name} 👋
           </h1>
           <p className="text-slate-500 text-sm mt-1">
-            {isOwner ? 'Store Owner' : 'Employee'} • {employee.storeName || storeInfo?.name}
+            {isOwner ? 'Store Owner' : 'Employee'} • {storeInfo?.name || employee.storeId}
           </p>
         </div>
         <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
@@ -117,15 +120,13 @@ export default function EmployeeDashboard() {
           <p className="text-sm font-medium text-slate-700 mb-3">Your Permissions</p>
           <div className="flex flex-wrap gap-2">
             {allPermissionKeys.map((key) => {
-              const value = permissions[key];
-              const label = key
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, (c) => c.toUpperCase());
+              const granted = permissions[key] === true;
+              const label   = key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
               return (
                 <span
                   key={key}
                   className={`px-3 py-1 rounded-full text-xs font-medium border ${
-                    value
+                    granted
                       ? 'bg-green-50 text-green-700 border-green-200'
                       : 'bg-red-50 text-red-500 border-red-200 line-through opacity-60'
                   }`}
@@ -166,9 +167,7 @@ export default function EmployeeDashboard() {
             <ShieldCheck size={28} className="text-slate-400" />
           </div>
           <p className="text-slate-600 font-medium">No modules assigned yet</p>
-          <p className="text-slate-400 text-sm mt-1">
-            Contact your store owner to get permissions
-          </p>
+          <p className="text-slate-400 text-sm mt-1">Contact your store owner to get permissions</p>
         </div>
       )}
     </div>

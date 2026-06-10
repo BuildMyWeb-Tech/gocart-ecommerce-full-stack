@@ -8,128 +8,268 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ─── USER ────────────────────────────────────────────────────────────────────
+
 model User {
-  id          String    @id
+  id          String     @id
   name        String
   email       String
   image       String
-  cart        Json      @default("{}")
-  Address     Address[]
-  buyerOrders Order[]   @relation("BuyerRelation")
+  cart        Json       @default("{}")
+  addresses   Address[]
+  buyerOrders Order[]    @relation("BuyerRelation")
   ratings     Rating[]
+  wishlist    Wishlist[]
   store       Store?
 }
 
-model Category {
+// ─── STORE ───────────────────────────────────────────────────────────────────
+
+model Store {
+  id           String       @id @default(cuid())
+  userId       String       @unique
+  name         String
+  description  String
+  username     String       @unique
+  address      String
+  status       StoreStatus  @default(PENDING)
+  isActive     Boolean      @default(false)
+  logo         String
+  email        String
+  contact      String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id])
+  categories   Category[]
+  employees    Employee[]
+  inventories  Inventory[]
+  orders       Order[]
+  products     Product[]
+  commission   Commission?
+  shippingRules ShippingRule[]
+
+  @@index([status])
+  @@index([isActive])
+}
+
+// ─── COMMISSION ──────────────────────────────────────────────────────────────
+
+model Commission {
+  id         String   @id @default(cuid())
+  storeId    String   @unique
+  percentage Float    @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  store      Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+}
+
+// ─── SHIPPING RULE ───────────────────────────────────────────────────────────
+
+model ShippingRule {
   id          String   @id @default(cuid())
+  storeId     String?
+  name        String
+  minOrderAmt Float    @default(0)
+  cost        Float    @default(0)
+  isFree      Boolean  @default(false)
+  isGlobal    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([isGlobal])
+}
+
+// ─── EMPLOYEE ────────────────────────────────────────────────────────────────
+
+model Employee {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  password    String
+  storeId     String
+  permissions Json     @default("{}")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId])
+  @@index([email])
+}
+
+// ─── CATEGORY ────────────────────────────────────────────────────────────────
+
+model Category {
+  id          String    @id @default(cuid())
   name        String
   description String
   image       String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  createdBy   String   @default("ADMIN")
+  isGlobal    Boolean   @default(false)
   storeId     String?
-  store       Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  store       Store?    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products    ProductCategory[]
 
   @@unique([name, storeId])
   @@index([storeId])
-  @@index([createdBy])
+  @@index([isGlobal])
 }
+
+// ─── PRODUCT ─────────────────────────────────────────────────────────────────
 
 model Product {
-  id          String   @id @default(cuid())
+  id          String          @id @default(cuid())
+  storeId     String
   name        String
+  slug        String
   description String
-  mrp         Float
-  price       Float
+  brand       String?
+  keyFeatures String[]        @default([])
   images      String[]
-  category    String[]
-  quantity    Int      @default(0)
-  inStock     Boolean  @default(true)
-  storeId     String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  keyFeatures String[] @default([])
-  createdBy   String   @default("STORE")
+  status      ProductStatus   @default(ACTIVE)
+  createdBy   String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  // ── POS / Billing fields ──────────────────────────────────────
-  // NOTE: barcode is now on ProductVariant, not here
-  sku         String?
-
-  inventory   Inventory[]
-  orderItems  OrderItem[]
-  billItems   BillItem[]
+  store       Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
   variants    ProductVariant[]
-  store       Store?      @relation(fields: [storeId], references: [id], onDelete: Cascade)
-  rating      Rating[]
+  categories  ProductCategory[]
+  ratings     Rating[]
+  wishlist    Wishlist[]
 
+  @@unique([slug, storeId])
   @@index([storeId])
-  @@index([createdBy])
-  @@index([inStock])
-  @@index([sku])
+  @@index([status])
+  @@index([createdAt])
 }
 
-// ── Product Variants (size/barcode/price/stock per variant) ───────
+// ─── PRODUCT ↔ CATEGORY (join table) ─────────────────────────────────────────
+
+model ProductCategory {
+  productId  String
+  categoryId String
+
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryId])
+}
+
+// ─── PRODUCT VARIANT ─────────────────────────────────────────────────────────
+
 model ProductVariant {
-  id        String  @id @default(cuid())
-  productId String
+  id          String   @id @default(cuid())
+  productId   String
+  color       String
+  size        String
+  price       Float
+  costPrice   Float    @default(0)
+  sku         String   @unique
+  stock       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  size      String
-  price     Float
-  barcode   String  @unique
-  stock     Int     @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
-  billItems BillItem[]
+  product     Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventory   Inventory?
+  orderItems  OrderItem[]
 
   @@index([productId])
-  @@index([barcode])
+  @@index([sku])
   @@index([stock])
 }
 
+// ─── INVENTORY ───────────────────────────────────────────────────────────────
+
 model Inventory {
   id        String   @id @default(cuid())
-  productId String
+  variantId String   @unique
   storeId   String
   quantity  Int      @default(0)
   lowStock  Int      @default(10)
   updatedAt DateTime @updatedAt
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
-  @@unique([productId, storeId])
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  store     Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
   @@index([storeId])
-  @@index([productId])
+  @@index([variantId])
   @@index([quantity])
 }
 
+// ─── WISHLIST ─────────────────────────────────────────────────────────────────
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+}
+
+// ─── ORDER ───────────────────────────────────────────────────────────────────
+
 model Order {
   id            String          @id @default(cuid())
-  total         Float
-  status        OrderStatus     @default(ORDER_PLACED)
   userId        String
   storeId       String
   addressId     String
+  subtotal      Float
+  shippingCost  Float           @default(0)
+  commissionAmt Float           @default(0)
+  total         Float
+  status        OrderStatus     @default(PENDING)
   isPaid        Boolean         @default(false)
   paymentMethod PaymentMethod
+  paymentRef    String?
+  isCouponUsed  Boolean         @default(false)
+  couponCode    String?
+  couponDiscount Float          @default(0)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
-  isCouponUsed  Boolean         @default(false)
-  coupon        Json            @default("{}")
-  address       Address         @relation(fields: [addressId], references: [id])
-  store         Store           @relation(fields: [storeId], references: [id])
+
   user          User            @relation("BuyerRelation", fields: [userId], references: [id])
+  store         Store           @relation(fields: [storeId], references: [id])
+  address       Address         @relation(fields: [addressId], references: [id])
   orderItems    OrderItem[]
   timeline      OrderTimeline[]
 
   @@index([storeId])
+  @@index([userId])
   @@index([status])
   @@index([createdAt])
-  @@index([userId])
 }
+
+// ─── ORDER ITEM ───────────────────────────────────────────────────────────────
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  productId String
+  variantId String
+  quantity  Int
+  price     Float
+
+  order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant   ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@index([variantId])
+}
+
+// ─── ORDER TIMELINE ──────────────────────────────────────────────────────────
 
 model OrderTimeline {
   id        String      @id @default(cuid())
@@ -138,22 +278,14 @@ model OrderTimeline {
   changedBy String
   note      String?
   createdAt DateTime    @default(now())
+
   order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@index([createdAt])
 }
 
-model OrderItem {
-  orderId   String
-  productId String
-  quantity  Int
-  price     Float
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product   Product @relation(fields: [productId], references: [id])
-
-  @@id([orderId, productId])
-}
+// ─── RATING / REVIEW ─────────────────────────────────────────────────────────
 
 model Rating {
   id        String   @id @default(cuid())
@@ -164,11 +296,16 @@ model Rating {
   orderId   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, productId, orderId])
+  @@index([productId])
+  @@index([userId])
 }
+
+// ─── ADDRESS ─────────────────────────────────────────────────────────────────
 
 model Address {
   id        String   @id @default(cuid())
@@ -182,9 +319,12 @@ model Address {
   country   String
   phone     String
   createdAt DateTime @default(now())
+
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  Order     Order[]
+  orders    Order[]
 }
+
+// ─── COUPON ──────────────────────────────────────────────────────────────────
 
 model Coupon {
   code        String   @id
@@ -197,148 +337,34 @@ model Coupon {
   createdAt   DateTime @default(now())
 }
 
-model Store {
-  id          String      @id @default(cuid())
-  userId      String      @unique
-  name        String
-  description String
-  username    String      @unique
-  address     String
-  status      String      @default("pending")
-  isActive    Boolean     @default(false)
-  logo        String
-  email       String
-  contact     String
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  Category    Category[]
-  Employee    Employee[]
-  Inventory   Inventory[]
-  Order       Order[]
-  Product     Product[]
-  Sale        Sale[]
-  Bill        Bill[]
-  user        User        @relation(fields: [userId], references: [id])
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
 
-  StoreSettings StoreSettings?
+enum StoreStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ACTIVE
+  INACTIVE
 }
 
-// ── POS Billing Models ────────────────────────────────────────────────────────
-
-model Bill {
-  id          String     @id @default(cuid())
-  billNumber  String
-  storeId     String
-  subtotal    Float
-  discount    Float      @default(0)
-  taxAmount   Float      @default(0)
-  total       Float
-  paymentMode String     @default("CASH")
-  note        String?
-  createdAt   DateTime   @default(now())
-
-  items       BillItem[]
-  store       Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@index([storeId])
-  @@index([createdAt])
-  @@index([billNumber])
-  @@index([storeId, createdAt])
-}
-
-model BillItem {
-  id        String  @id @default(cuid())
-  billId    String
-  productId String
-  variantId String?   // ← nullable so old bills without variants still work
-  name      String
-  size      String?   // ← variant size label (S, M, L, XL …)
-  price     Float
-  quantity  Int
-  discount  Float   @default(0)
-  total     Float
-
-  bill      Bill           @relation(fields: [billId], references: [id], onDelete: Cascade)
-  product   Product        @relation(fields: [productId], references: [id])
-  variant   ProductVariant? @relation(fields: [variantId], references: [id])
-
-  @@index([billId])
-  @@index([productId])
-  @@index([variantId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-model Sale {
-  id          String     @id @default(cuid())
-  storeId     String
-  amount      Float
-  source      SaleSource @default(ORDER)
-  referenceId String
-  createdAt   DateTime   @default(now())
-  store       Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@index([storeId])
-  @@index([createdAt])
-  @@index([storeId, createdAt])
-  @@index([source])
-  @@index([referenceId])
-}
-
-model Employee {
-  id          String   @id @default(cuid())
-  name        String
-  email       String   @unique
-  password    String
-  storeId     String
-  role        String
-  permissions Json     @default("{}")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@index([storeId])
-}
-
-model StoreSettings {
-  id              String   @id @default(cuid())
-  storeId         String   @unique
-  storeName       String
-  gstNumber       String?
-  address         String
-  taxType         String   @default("SINGLE")
-  taxPercent      Float?   @default(18)
-  cgst            Float?   @default(9)
-  sgst            Float?   @default(9)
-  currency        String   @default("INR")
-  showStoreName   Boolean  @default(true)
-  showGST         Boolean  @default(true)
-  footerMessage   String?  @default("Thank you for shopping with us!")
-  defaultLowStock Int      @default(10)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
 }
 
 enum OrderStatus {
-  ORDER_PLACED
-  PROCESSING
-  SHIPPED
-  DELIVERED
+  PENDING
   CONFIRMED
+  PACKED
+  SHIPPED
+  OUT_FOR_DELIVERY
+  DELIVERED
   CANCELLED
-  RETURN_REQUESTED
   RETURNED
-  REFUNDED
 }
 
 enum PaymentMethod {
   COD
   STRIPE
-}
-
-enum SaleSource {
-  ORDER
-  BILLING
 }

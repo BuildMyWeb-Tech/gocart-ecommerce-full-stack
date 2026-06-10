@@ -1,39 +1,31 @@
 // app/api/reports/sales-trend/route.js
-// ✅ TIMEZONE FIX: day bucketing now uses IST date, not UTC date.
-// ✅ TC-10 FIX: Returns 400 when custom range has missing from/to.
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
-import { buildDateRange, round2, fmtDay } from '@/lib/reportUtils';
+import { buildDateRange, round2, fmtDay, toISTDateKey, EXCLUDED_STATUSES } from '@/lib/reportUtils';
 
 async function resolveRole(request) {
   const { userId } = getAuth(request);
   if (!userId) return { role: null, storeId: null };
-  const isAdmin = await authAdmin(userId);
-  if (isAdmin) return { role: 'ADMIN', storeId: null };
+  const isAdminUser = await authAdmin(userId);
+  if (isAdminUser) return { role: 'ADMIN', storeId: null };
   const storeId = await authSeller(userId);
   if (storeId) return { role: 'STORE', storeId };
   return { role: null, storeId: null };
 }
 
-// ✅ Convert a UTC Date to IST YYYY-MM-DD string for bucketing
-function toISTDateKey(utcDate) {
-  return new Date(utcDate).toLocaleDateString('en-CA', {
-    timeZone: 'Asia/Kolkata',
-  }); // returns 'YYYY-MM-DD' format
-}
-
+// GET /api/reports/sales-trend
 export async function GET(request) {
   try {
     const { role, storeId: myStoreId } = await resolveRole(request);
-    if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    if (!role) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || 'month';
-    const from = searchParams.get('from');
-    const to = searchParams.get('to');
+    const period      = searchParams.get('period') || 'month';
+    const from        = searchParams.get('from');
+    const to          = searchParams.get('to');
     const filterStore = searchParams.get('storeId');
 
     const dateRange = buildDateRange(period, from, to);
@@ -46,51 +38,57 @@ export async function GET(request) {
 
     const scopedStoreId = role === 'ADMIN' ? filterStore || undefined : myStoreId;
 
-    const where = {
-      createdAt: dateRange,
-      ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
-    };
-
-    const sales = await prisma.sale.findMany({
-      where,
-      select: { amount: true, createdAt: true },
+    const orders = await prisma.order.findMany({
+      where: {
+        createdAt: dateRange,
+        status: { notIn: EXCLUDED_STATUSES },
+        ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
+      },
+      select: { total: true, commissionAmt: true, createdAt: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    // ✅ Bucket by IST date (not UTC date)
-    // Without this fix, a sale at 10:30pm IST = 5pm UTC buckets to the wrong day
+    // Bucket by IST date
     const buckets = {};
-    for (const sale of sales) {
-      const key = toISTDateKey(sale.createdAt); // 'YYYY-MM-DD' in IST
-      if (!buckets[key]) buckets[key] = { revenue: 0, count: 0 };
-      buckets[key].revenue += sale.amount;
-      buckets[key].count += 1;
+    for (const order of orders) {
+      const key = toISTDateKey(order.createdAt);
+      if (!buckets[key]) buckets[key] = { revenue: 0, commission: 0, count: 0 };
+      buckets[key].revenue    += order.total;
+      buckets[key].commission += order.commissionAmt;
+      buckets[key].count      += 1;
     }
 
-    // Fill every IST day in range — no gaps for charts
+    // Fill gaps
     const trend = [];
     const cursor = new Date(dateRange.gte);
-    const end = new Date(dateRange.lte);
+    const end    = new Date(dateRange.lte);
     while (cursor <= end) {
-      const key = toISTDateKey(cursor); // IST date key
-      const label = fmtDay(cursor); // IST-formatted label
+      const key   = toISTDateKey(cursor);
+      const label = fmtDay(cursor);
       trend.push({
-        date: key,
+        date:       key,
         label,
-        revenue: round2(buckets[key]?.revenue || 0),
-        count: buckets[key]?.count || 0,
+        revenue:    round2(buckets[key]?.revenue    || 0),
+        commission: round2(buckets[key]?.commission || 0),
+        count:      buckets[key]?.count || 0,
       });
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    const totalRevenue = round2(sales.reduce((s, x) => s + x.amount, 0));
-    const totalCount = sales.length;
-    const peakDay = trend.reduce((best, d) => (d.revenue > (best?.revenue || 0) ? d : best), null);
+    const totalRevenue    = round2(orders.reduce((s, o) => s + o.total, 0));
+    const totalCommission = round2(orders.reduce((s, o) => s + o.commissionAmt, 0));
+    const totalCount      = orders.length;
+    const peakDay         = trend.reduce(
+      (best, d) => (d.revenue > (best?.revenue || 0) ? d : best),
+      null
+    );
 
     return NextResponse.json({
       trend,
       meta: {
         totalRevenue,
+        totalCommission,
+        storeRevenue: round2(totalRevenue - totalCommission),
         totalCount,
         peakDay,
         period,

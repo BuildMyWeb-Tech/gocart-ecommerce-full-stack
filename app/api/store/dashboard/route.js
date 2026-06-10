@@ -1,155 +1,188 @@
 // app/api/store/dashboard/route.js
-// Feature 10: adds totalBills, totalBillingRevenue, todayBills, todayBillingRevenue,
-//              topVariants (by BillItem qty), lowStockVariants
 import prisma from '@/lib/prisma';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import authSeller from '@/middlewares/authSeller';
-import { verifyEmployeeToken } from '@/middlewares/authEmployee';
+import verifyEmployeeToken, { hasPermission, PERMISSIONS } from '@/middlewares/authEmployee';
+import { round2, EXCLUDED_STATUSES } from '@/lib/reportUtils';
 
-async function resolveStoreId(request) {
-  // Employee JWT
-  try {
-    const emp = verifyEmployeeToken(request);
-    if (emp?.storeId) return emp.storeId;
-  } catch (_) {}
-  // Clerk owner
+async function resolveStoreAuth(request) {
+  const employee = verifyEmployeeToken(request);
+  if (employee) return { storeId: employee.storeId, employee, source: 'employee' };
+
   const { userId } = getAuth(request);
-  if (!userId) return null;
-  return await authSeller(userId);
+  if (!userId) return { storeId: null };
+  const storeId = await authSeller(userId);
+  return { storeId, source: 'owner' };
 }
 
+// GET /api/store/dashboard
 export async function GET(request) {
   try {
-    const storeId = await resolveStoreId(request);
-    if (!storeId) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    const { storeId, employee, source } = await resolveStoreAuth(request);
+    if (!storeId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const todayStart = new Date(new Date().setHours(0, 0, 0, 0));
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
 
-    // ── Run all queries in parallel ────────────────────────────────────────────
     const [
       totalProducts,
       totalOrders,
       totalCategories,
-      uniqueCustomers,
-      orderStats,
+
+      // Revenue
+      revenueAgg,
+      todayRevenueAgg,
+
+      // Order status counts
       pendingOrders,
-      processingOrders,
+      confirmedOrders,
+      packedOrders,
       shippedOrders,
+      outForDeliveryOrders,
       deliveredOrders,
       cancelledOrders,
-      revenueData,
-      ratings,
-      // ── Feature 10 ────────────────────────────────────────────────────────
-      billStats,
-      todayBillStats,
-      topVariantsRaw,
+
+      // Unique customers
+      uniqueCustomers,
+
+      // Recent ratings for this store
+      recentRatings,
+
+      // Low stock variants
       lowStockVariants,
+
+      // Top selling variants this month
+      topVariantsRaw,
     ] = await Promise.all([
       prisma.product.count({ where: { storeId } }),
       prisma.order.count({ where: { storeId } }),
       prisma.category.count({ where: { storeId } }),
-      prisma.order.groupBy({ by: ['userId'], where: { storeId }, _count: { userId: true } }),
-      prisma.order.aggregate({ where: { storeId }, _sum: { total: true } }),
-      prisma.order.count({ where: { storeId, status: 'ORDER_PLACED' } }),
-      prisma.order.count({ where: { storeId, status: 'PROCESSING' } }),
+
+      // All time revenue
+      prisma.order.aggregate({
+        where: { storeId, status: { notIn: EXCLUDED_STATUSES } },
+        _sum: { total: true, commissionAmt: true },
+      }),
+
+      // Today
+      prisma.order.aggregate({
+        where: {
+          storeId,
+          createdAt: { gte: todayStart },
+          status: { notIn: EXCLUDED_STATUSES },
+        },
+        _sum: { total: true },
+        _count: { id: true },
+      }),
+
+      prisma.order.count({ where: { storeId, status: 'PENDING' } }),
+      prisma.order.count({ where: { storeId, status: 'CONFIRMED' } }),
+      prisma.order.count({ where: { storeId, status: 'PACKED' } }),
       prisma.order.count({ where: { storeId, status: 'SHIPPED' } }),
+      prisma.order.count({ where: { storeId, status: 'OUT_FOR_DELIVERY' } }),
       prisma.order.count({ where: { storeId, status: 'DELIVERED' } }),
       prisma.order.count({ where: { storeId, status: 'CANCELLED' } }),
 
-      // Last 30 days daily revenue+orders
-      prisma.$queryRaw`
-        SELECT
-          TO_CHAR("createdAt" AT TIME ZONE 'Asia/Kolkata', 'DD MMM') AS date,
-          SUM(total) AS revenue,
-          COUNT(*) AS orders
-        FROM "Order"
-        WHERE "storeId" = ${storeId}
-          AND "createdAt" >= NOW() - INTERVAL '30 days'
-        GROUP BY TO_CHAR("createdAt" AT TIME ZONE 'Asia/Kolkata', 'DD MMM'),
-                 DATE_TRUNC('day', "createdAt" AT TIME ZONE 'Asia/Kolkata')
-        ORDER BY DATE_TRUNC('day', "createdAt" AT TIME ZONE 'Asia/Kolkata') ASC
-      `,
+      // Unique customers
+      prisma.order.groupBy({
+        by: ['userId'],
+        where: { storeId },
+      }),
 
+      // Recent ratings
       prisma.rating.findMany({
         where: { product: { storeId } },
         include: {
-          user: { select: { id: true, name: true, image: true } },
-          product: { select: { id: true, name: true, category: true } },
+          user:    { select: { id: true, name: true, image: true } },
+          product: { select: { id: true, name: true, images: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: 10,
       }),
 
-      // ── Billing: all-time ──────────────────────────────────────────────────
-      prisma.bill.aggregate({
-        where: { storeId },
-        _sum: { total: true },
-        _count: { id: true },
-      }),
-
-      // ── Billing: today ────────────────────────────────────────────────────
-      prisma.bill.aggregate({
-        where: { storeId, createdAt: { gte: todayStart } },
-        _sum: { total: true },
-        _count: { id: true },
-      }),
-
-      // ── Top variants by qty sold in BillItems ──────────────────────────────
-      prisma.billItem.groupBy({
-        by: ['variantId'],
-        where: {
-          bill: { storeId },
-          variantId: { not: null },
-        },
-        _sum: { quantity: true, total: true },
-        orderBy: { _sum: { quantity: 'desc' } },
-        take: 10,
-      }),
-
-      // ── Low stock variants (stock ≤ 5) ─────────────────────────────────────
+      // Low stock variants (stock <= 5)
       prisma.productVariant.findMany({
-        where: {
-          stock: { lte: 5 },
-          product: { storeId },
-        },
-        include: {
-          product: { select: { id: true, name: true } },
-        },
+        where: { stock: { lte: 5 }, product: { storeId } },
+        include: { product: { select: { id: true, name: true } } },
         orderBy: { stock: 'asc' },
         take: 20,
       }),
+
+      // Top variants by quantity sold this month
+      prisma.orderItem.groupBy({
+        by: ['variantId'],
+        where: {
+          order: {
+            storeId,
+            status: { notIn: EXCLUDED_STATUSES },
+            createdAt: {
+              gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+            },
+          },
+        },
+        _sum: { quantity: true, price: true },
+        _count: { orderId: true },
+        orderBy: { _sum: { quantity: 'desc' } },
+        take: 10,
+      }),
     ]);
 
-    // ── Hydrate top variants with product+size info ────────────────────────
+    // Last 30 days daily chart
+    const last30Orders = await prisma.order.findMany({
+      where: {
+        storeId,
+        status: { notIn: EXCLUDED_STATUSES },
+        createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      },
+      select: { total: true, createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const buckets = {};
+    for (const o of last30Orders) {
+      const key = o.createdAt.toISOString().split('T')[0];
+      if (!buckets[key]) buckets[key] = { revenue: 0, orders: 0 };
+      buckets[key].revenue += o.total;
+      buckets[key].orders  += 1;
+    }
+    const dailyData = Object.entries(buckets).map(([date, data]) => ({
+      date,
+      revenue: round2(data.revenue),
+      orders:  data.orders,
+    }));
+
+    // Hydrate top variants
     const variantIds = topVariantsRaw.map((r) => r.variantId).filter(Boolean);
     const variantDetails =
       variantIds.length > 0
         ? await prisma.productVariant.findMany({
             where: { id: { in: variantIds } },
-            select: { id: true, size: true, product: { select: { name: true } } },
+            select: {
+              id: true, color: true, size: true, sku: true,
+              product: { select: { name: true, images: true } },
+            },
           })
         : [];
-
     const variantMap = Object.fromEntries(variantDetails.map((v) => [v.id, v]));
 
     const topVariants = topVariantsRaw.map((r) => {
       const detail = variantMap[r.variantId];
       return {
-        variantId: r.variantId,
-        size: detail?.size || '?',
+        variantId:   r.variantId,
+        color:       detail?.color || '?',
+        size:        detail?.size  || '?',
+        sku:         detail?.sku   || '',
         productName: detail?.product?.name || 'Unknown',
-        totalQty: r._sum.quantity || 0,
-        totalRevenue: r._sum.total || 0,
+        productImage: detail?.product?.images?.[0] || null,
+        totalQty:    r._sum.quantity || 0,
+        totalRevenue: round2(r._sum.price || 0),
+        orders:      r._count.orderId || 0,
       };
     });
 
-    // ── Format daily data ──────────────────────────────────────────────────
-    const dailyData = (revenueData || []).map((d) => ({
-      date: d.date,
-      revenue: parseFloat(d.revenue || 0),
-      orders: parseInt(d.orders || 0),
-    }));
+    const totalRevenue    = round2(revenueAgg._sum.total || 0);
+    const totalCommission = round2(revenueAgg._sum.commissionAmt || 0);
 
     return NextResponse.json({
       dashboardData: {
@@ -157,27 +190,36 @@ export async function GET(request) {
         totalOrders,
         totalCategories,
         totalCustomers: uniqueCustomers.length,
-        totalEarnings: orderStats._sum.total || 0,
-        revenue: orderStats._sum.total || 0,
-        pending: pendingOrders,
-        processing: processingOrders,
-        shipped: shippedOrders,
-        delivered: deliveredOrders,
-        cancelled: cancelledOrders,
+
+        totalRevenue,
+        totalCommission,
+        netRevenue: round2(totalRevenue - totalCommission),
+
+        todayOrders:   todayRevenueAgg._count.id || 0,
+        todayRevenue:  round2(todayRevenueAgg._sum.total || 0),
+
+        orderStatus: {
+          pending:        pendingOrders,
+          confirmed:      confirmedOrders,
+          packed:         packedOrders,
+          shipped:        shippedOrders,
+          outForDelivery: outForDeliveryOrders,
+          delivered:      deliveredOrders,
+          cancelled:      cancelledOrders,
+        },
+
         dailyData,
-        ratings,
-        // ── Feature 10 ────────────────────────────────────────────────────
-        totalBills: billStats._count.id || 0,
-        totalBillingRevenue: billStats._sum.total || 0,
-        todayBills: todayBillStats._count.id || 0,
-        todayBillingRevenue: todayBillStats._sum.total || 0,
+        recentRatings,
         topVariants,
-        lowStockVariants: lowStockVariants.map((v) => ({
-          variantId: v.id,
-          size: v.size,
-          stock: v.stock,
+
+        lowStockAlerts: lowStockVariants.map((v) => ({
+          variantId:   v.id,
+          color:       v.color,
+          size:        v.size,
+          sku:         v.sku,
+          stock:       v.stock,
+          productId:   v.productId,
           productName: v.product.name,
-          productId: v.productId,
         })),
       },
     });

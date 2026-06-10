@@ -10,9 +10,9 @@ export default function EmployeeLayout({ children }) {
   const router   = useRouter();
   const pathname = usePathname();
 
-  const [employee, setEmployee]     = useState(null);
-  const [storeInfo, setStoreInfo]   = useState(null);
-  const [loading, setLoading]       = useState(true);
+  const [employee,   setEmployee]   = useState(null);
+  const [storeInfo,  setStoreInfo]  = useState(null);
+  const [loading,    setLoading]    = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
@@ -22,34 +22,25 @@ export default function EmployeeLayout({ children }) {
       return;
     }
 
-    const token   = localStorage.getItem('empToken');
-    const empData = localStorage.getItem('empData');
-
-    console.log('empToken from localStorage:', token ? 'EXISTS' : 'MISSING');
-    console.log('empData from localStorage:', empData ? 'EXISTS' : 'MISSING');
+    // Keys match what employee/login route stores
+    const token   = localStorage.getItem('employeeToken');
+    const empData = localStorage.getItem('employeeData');
 
     if (!token || !empData) {
-      console.log('No token found → redirecting to login');
       router.replace('/employee/login');
       return;
     }
 
-    // Verify token against API
     fetch('/api/store/employee-auth', {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}` },
     })
       .then(async (res) => {
         const data = await res.json();
-        console.log('employee-auth response:', data);
 
         if (!data.valid) {
-          console.log('Token invalid:', data.error);
-          localStorage.removeItem('empToken');
-          localStorage.removeItem('empData');
+          localStorage.removeItem('employeeToken');
+          localStorage.removeItem('employeeData');
           router.replace('/employee/login');
           return;
         }
@@ -58,8 +49,7 @@ export default function EmployeeLayout({ children }) {
         setStoreInfo(data.store);
         setLoading(false);
       })
-      .catch((err) => {
-        console.error('employee-auth fetch error:', err);
+      .catch(() => {
         router.replace('/employee/login');
       });
   }, [pathname]);
@@ -82,21 +72,10 @@ export default function EmployeeLayout({ children }) {
       />
       <div className="flex flex-1 h-full overflow-hidden relative">
         {mobileOpen && (
-          <div
-            className="fixed inset-0 bg-slate-900/50 z-40 md:hidden"
-            onClick={() => setMobileOpen(false)}
-          />
+          <div className="fixed inset-0 bg-slate-900/50 z-40 md:hidden" onClick={() => setMobileOpen(false)} />
         )}
-        <div
-          className={`fixed md:relative md:flex h-full z-50 transition-transform duration-300 ${
-            mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-          }`}
-        >
-          <EmployeeSidebar
-            storeInfo={storeInfo}
-            employee={employee}
-            closeMobileMenu={() => setMobileOpen(false)}
-          />
+        <div className={`fixed md:relative md:flex h-full z-50 transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+          <EmployeeSidebar storeInfo={storeInfo} employee={employee} closeMobileMenu={() => setMobileOpen(false)} />
         </div>
         <div className="flex-1 h-full overflow-y-auto bg-slate-50">
           <div className="p-5 lg:pl-12 lg:pt-12">{children}</div>

@@ -24,8 +24,9 @@ export default function EmployeeLoginPage() {
       const { data } = await axios.post('/api/auth/store-login', form);
 
       // Save JWT + employee info
-      localStorage.setItem('empToken', data.token);
-      localStorage.setItem('empData', JSON.stringify(data.user));
+      localStorage.setItem('employeeToken', data.token);
+      localStorage.setItem('employeeData',  JSON.stringify(data.employee));
+      localStorage.setItem('employeeStore', JSON.stringify(data.employee.store));
 
       toast.success(`Welcome, ${data.user.name}!`);
       router.push('/employee/dashboard');

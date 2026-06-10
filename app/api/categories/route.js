@@ -3,84 +3,64 @@ import imagekit from '@/configs/imageKit';
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import authSeller from '@/middlewares/authSeller';
+import verifyEmployeeToken, { hasPermission, PERMISSIONS } from '@/middlewares/authEmployee';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
-// ── Resolve caller role ───────────────────────────────────────────
+// ── Resolve caller identity ───────────────────────────────────────────────────
 async function resolveRole(request) {
+  // 1. Employee JWT
+  const employee = verifyEmployeeToken(request);
+  if (employee) return { role: 'EMPLOYEE', storeId: employee.storeId, employee };
+
   const { userId } = getAuth(request);
-  if (!userId) return { userId: null, role: null, storeId: null };
+  if (!userId) return { role: 'PUBLIC', storeId: null };
 
-  const isAdmin = await authAdmin(userId);
-  if (isAdmin) return { userId, role: 'ADMIN', storeId: null };
+  // 2. Admin check
+  const isAdminUser = await authAdmin(userId);
+  if (isAdminUser) return { role: 'ADMIN', storeId: null, userId };
 
+  // 3. Store owner check
   const storeId = await authSeller(userId);
-  if (storeId) return { userId, role: 'STORE', storeId };
+  if (storeId) return { role: 'STORE', storeId, userId };
 
-  return { userId, role: null, storeId: null };
+  return { role: 'PUBLIC', storeId: null };
 }
 
-// ── GET: Scoped fetch ─────────────────────────────────────────────
-// Admin  → all categories (global + all stores)
-// Store  → global (ADMIN) + their own
-// Public → global only
-//
-// ── Also handles dependency check before delete ───────────────────
-// ?checkOnly=true&id=<categoryId>
-// Returns: { categoryName, affectedCount, affectedProducts[] }
+// GET /api/categories — Scoped category fetch
+// Admin    → all categories
+// Store    → global + own store categories
+// Employee → global + their store categories
+// Public   → global only
 export async function GET(request) {
   try {
     const { role, storeId } = await resolveRole(request);
     const { searchParams } = new URL(request.url);
+    const filterStoreId = searchParams.get('storeId');
 
-    // ── Dependency check mode ─────────────────────────────────────
-    const checkOnly = searchParams.get('checkOnly') === 'true';
-    const checkId = searchParams.get('id');
-
-    if (checkOnly && checkId) {
-      // Must be authenticated to check
-      if (!role) {
-        return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
-      }
-
-      const category = await prisma.category.findUnique({ where: { id: checkId } });
-      if (!category) {
-        return NextResponse.json({ error: 'Category not found' }, { status: 404 });
-      }
-
-      // Find all products that include this category name in their array
-      const affectedProducts = await prisma.product.findMany({
-        where: { category: { has: category.name } },
-        select: { id: true, name: true, createdBy: true, storeId: true },
-      });
-
-      return NextResponse.json({
-        categoryName: category.name,
-        affectedCount: affectedProducts.length,
-        affectedProducts: affectedProducts.map((p) => ({
-          id: p.id,
-          name: p.name,
-          scope: p.createdBy === 'ADMIN' ? 'Global' : 'Store',
-        })),
-      });
-    }
-
-    // ── Normal list fetch ─────────────────────────────────────────
     let where = {};
 
     if (role === 'ADMIN') {
-      where = {};
-    } else if (role === 'STORE') {
-      where = { OR: [{ createdBy: 'ADMIN' }, { storeId }] };
+      where = filterStoreId ? { storeId: filterStoreId } : {};
+    } else if (role === 'STORE' || role === 'EMPLOYEE') {
+      where = {
+        OR: [
+          { isGlobal: true },
+          { storeId },
+        ],
+      };
     } else {
       // Public: global only
-      where = { createdBy: 'ADMIN' };
+      where = { isGlobal: true };
     }
 
     const categories = await prisma.category.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { store: { select: { name: true, username: true } } },
+      include: {
+        store: { select: { name: true, username: true } },
+        _count: { select: { products: true } },
+      },
     });
 
     return NextResponse.json({ categories });
@@ -90,21 +70,35 @@ export async function GET(request) {
   }
 }
 
-// ── POST: Create category ─────────────────────────────────────────
-// Admin  → global (storeId = null, createdBy = ADMIN)
-// Store  → scoped (storeId = store's id, createdBy = STORE)
+// POST /api/categories — Create a store category
+// Store owner or employee with MANAGE_CATEGORIES permission
 export async function POST(request) {
   try {
-    const { role, storeId } = await resolveRole(request);
+    const { role, storeId, employee } = await resolveRole(request);
 
-    if (!role) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    if (role === 'PUBLIC') {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    }
+
+    // Admin uses /api/admin/categories for global categories
+    if (role === 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Admins create global categories via /api/admin/categories' },
+        { status: 400 }
+      );
+    }
+
+    // Employee permission check
+    if (role === 'EMPLOYEE') {
+      if (!hasPermission(employee, PERMISSIONS.MANAGE_CATEGORIES)) {
+        return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+      }
     }
 
     const formData = await request.formData();
-    const name = formData.get('name');
-    const description = formData.get('description');
-    const imageFile = formData.get('image');
+    const name        = formData.get('name')?.trim();
+    const description = formData.get('description')?.trim();
+    const imageFile   = formData.get('image');
 
     if (!name || !description || !imageFile) {
       return NextResponse.json(
@@ -113,14 +107,13 @@ export async function POST(request) {
       );
     }
 
-    const scopedStoreId = role === 'ADMIN' ? null : storeId;
-
+    // Store categories must be unique within that store
     const existing = await prisma.category.findFirst({
-      where: { name, storeId: scopedStoreId },
+      where: { name, storeId },
     });
     if (existing) {
       return NextResponse.json(
-        { error: 'A category with this name already exists in this scope' },
+        { error: 'A category with this name already exists in your store' },
         { status: 400 }
       );
     }
@@ -129,7 +122,7 @@ export async function POST(request) {
     const uploadResponse = await imagekit.upload({
       file: buffer,
       fileName: imageFile.name,
-      folder: 'categories',
+      folder: 'categories/store',
     });
     const imageUrl = imagekit.url({
       path: uploadResponse.filePath,
@@ -141,10 +134,12 @@ export async function POST(request) {
         name,
         description,
         image: imageUrl,
-        createdBy: role,
-        storeId: scopedStoreId,
+        isGlobal: false,
+        storeId,
       },
-      include: { store: { select: { name: true, username: true } } },
+      include: {
+        store: { select: { name: true, username: true } },
+      },
     });
 
     return NextResponse.json({ message: 'Category created successfully', category });
@@ -154,22 +149,26 @@ export async function POST(request) {
   }
 }
 
-// ── PUT: Edit category ────────────────────────────────────────────
-// Admin  → can edit any category
-// Store  → can only edit their own categories
+// PUT /api/categories — Edit a store category
 export async function PUT(request) {
   try {
-    const { role, storeId } = await resolveRole(request);
+    const { role, storeId, employee } = await resolveRole(request);
 
-    if (!role) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    if (role === 'PUBLIC') {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    }
+
+    if (role === 'EMPLOYEE') {
+      if (!hasPermission(employee, PERMISSIONS.MANAGE_CATEGORIES)) {
+        return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+      }
     }
 
     const formData = await request.formData();
-    const id = formData.get('id');
-    const name = formData.get('name');
-    const description = formData.get('description');
-    const imageFile = formData.get('image');
+    const id          = formData.get('id');
+    const name        = formData.get('name')?.trim();
+    const description = formData.get('description')?.trim();
+    const imageFile   = formData.get('image');
 
     if (!id || !name || !description) {
       return NextResponse.json({ error: 'ID, name and description are required' }, { status: 400 });
@@ -180,12 +179,24 @@ export async function PUT(request) {
       return NextResponse.json({ error: 'Category not found' }, { status: 404 });
     }
 
-    if (role === 'STORE' && existing.storeId !== storeId) {
-      return NextResponse.json({ error: 'You can only edit your own categories' }, { status: 403 });
+    // Store/Employee can only edit their own store's categories (not global)
+    if (role !== 'ADMIN') {
+      if (existing.isGlobal) {
+        return NextResponse.json({ error: 'Cannot edit global categories' }, { status: 403 });
+      }
+      if (existing.storeId !== storeId) {
+        return NextResponse.json({ error: 'You can only edit your own categories' }, { status: 403 });
+      }
     }
 
+    // Check name conflict within same scope
     const nameConflict = await prisma.category.findFirst({
-      where: { name, storeId: existing.storeId, NOT: { id } },
+      where: {
+        name,
+        storeId: existing.storeId,
+        isGlobal: existing.isGlobal,
+        NOT: { id },
+      },
     });
     if (nameConflict) {
       return NextResponse.json(
@@ -200,7 +211,7 @@ export async function PUT(request) {
       const uploadResponse = await imagekit.upload({
         file: buffer,
         fileName: imageFile.name,
-        folder: 'categories',
+        folder: 'categories/store',
       });
       imageUrl = imagekit.url({
         path: uploadResponse.filePath,
@@ -221,72 +232,51 @@ export async function PUT(request) {
   }
 }
 
-// ── DELETE: Delete category ───────────────────────────────────────
-// Body: { id: string, deleteProducts?: boolean }
-//
-// deleteProducts = true  → delete all products using this category, then delete category
-// deleteProducts = false → remove category name from products' array,  then delete category
+// DELETE /api/categories — Delete a store category
 export async function DELETE(request) {
   try {
-    const { role, storeId } = await resolveRole(request);
+    const { role, storeId, employee } = await resolveRole(request);
 
-    if (!role) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+    if (role === 'PUBLIC') {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { id, deleteProducts = false } = body;
-
-    if (!id) {
-      return NextResponse.json({ error: 'Category ID is required' }, { status: 400 });
+    if (role === 'EMPLOYEE') {
+      if (!hasPermission(employee, PERMISSIONS.MANAGE_CATEGORIES)) {
+        return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
+      }
     }
 
-    const existing = await prisma.category.findUnique({ where: { id } });
+    const { id } = await request.json();
+    if (!id) return NextResponse.json({ error: 'Category ID is required' }, { status: 400 });
+
+    const existing = await prisma.category.findUnique({
+      where: { id },
+      include: { _count: { select: { products: true } } },
+    });
     if (!existing) {
       return NextResponse.json({ error: 'Category not found' }, { status: 404 });
     }
 
-    if (role === 'STORE' && existing.storeId !== storeId) {
-      return NextResponse.json(
-        { error: 'You can only delete your own categories' },
-        { status: 403 }
-      );
+    // Store/Employee cannot delete global categories
+    if (role !== 'ADMIN' && existing.isGlobal) {
+      return NextResponse.json({ error: 'Cannot delete global categories' }, { status: 403 });
     }
 
-    // ── Find products that use this category ──────────────────────
-    const affectedProducts = await prisma.product.findMany({
-      where: { category: { has: existing.name } },
-      select: { id: true, category: true },
+    // Store/Employee can only delete their own store categories
+    if (role !== 'ADMIN' && existing.storeId !== storeId) {
+      return NextResponse.json({ error: 'You can only delete your own categories' }, { status: 403 });
+    }
+
+    // Remove from join table then delete category
+    await prisma.$transaction(async (tx) => {
+      await tx.productCategory.deleteMany({ where: { categoryId: id } });
+      await tx.category.delete({ where: { id } });
     });
 
-    if (deleteProducts) {
-      // ── Option A: delete the products entirely ────────────────
-      await prisma.product.deleteMany({
-        where: { category: { has: existing.name } },
-      });
-    } else {
-      // ── Option B: strip the category name from each product ───
-      await Promise.all(
-        affectedProducts.map((product) =>
-          prisma.product.update({
-            where: { id: product.id },
-            data: {
-              category: product.category.filter((c) => c !== existing.name),
-            },
-          })
-        )
-      );
-    }
-
-    // Delete the category itself
-    await prisma.category.delete({ where: { id } });
-
     return NextResponse.json({
-      message: deleteProducts
-        ? `Category and ${affectedProducts.length} product(s) deleted successfully`
-        : `Category deleted. ${affectedProducts.length} product(s) updated`,
-      deletedProducts: deleteProducts ? affectedProducts.length : 0,
-      updatedProducts: deleteProducts ? 0 : affectedProducts.length,
+      message: 'Category deleted. Products are kept but unlinked from this category.',
+      affectedProducts: existing._count.products,
     });
   } catch (error) {
     console.error('DELETE /api/categories error:', error);

@@ -128,8 +128,6 @@
       📁 sales
          📁 sync
             📄 route.js
-      📁 settings
-         📄 route.js
       📁 store
          📁 ai
             📄 route.js
@@ -152,6 +150,8 @@
             📁 variant
                📄 route.js
          📁 products-for-billing
+            📄 route.js
+         📁 settings
             📄 route.js
          📁 stock-toggle
             📄 route.js
@@ -302,3 +302,6 @@
          📄 migration.sql
       📄 migration_lock.toml
    📄 schema.prisma
+📄 README.md
+📄 show-structure.js
+📄 show-structure.txt
