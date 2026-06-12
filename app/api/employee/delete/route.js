@@ -1,35 +1,23 @@
 // app/api/employee/delete/route.js
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuth } from '@clerk/nextjs/server';
+import { auth } from '@clerk/nextjs/server';
 import authSeller from '@/middlewares/authSeller';
 
-// DELETE /api/employee/delete?id=xxx — Store owner only
 export async function DELETE(request) {
   try {
-    const { userId } = getAuth(request);
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
     const storeId = await authSeller(userId);
-    if (!storeId) {
-      return NextResponse.json(
-        { error: 'Only store owners can delete employees' },
-        { status: 403 }
-      );
-    }
+    if (!storeId) return NextResponse.json({ error: 'Only store owners can delete employees' }, { status: 403 });
 
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
 
-    if (!id) {
-      return NextResponse.json({ error: 'Employee ID is required' }, { status: 400 });
-    }
-
-    // Ensure employee belongs to this store
     const existing = await prisma.employee.findFirst({ where: { id, storeId } });
-    if (!existing) {
-      return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
-    }
+    if (!existing) return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
 
     await prisma.employee.delete({ where: { id } });
 

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { LogIn, Mail, Lock, Eye, EyeOff, Store, Users } from 'lucide-react';
+import { LogIn, Mail, Lock, Eye, EyeOff, Store, Users, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function StoreLoginPage() {
@@ -12,23 +12,29 @@ export default function StoreLoginPage() {
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loginType, setLoginType] = useState('owner'); // 'owner' | 'employee'
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.email || !form.password) {
-      toast.error('Please fill all fields');
-      return;
-    }
+    if (!form.email || !form.password) { toast.error('Please fill all fields'); return; }
+
     try {
       setLoading(true);
-      const { data } = await axios.post('/api/auth/store-login', form);
 
-      // Store JWT + session data
-      localStorage.setItem('employeeToken', data.token);
-      localStorage.setItem('employeeData', JSON.stringify(data.user));
-
-      toast.success(`Welcome back, ${data.user.name}!`);
-      router.push('/store');
+      if (loginType === 'employee') {
+        // Employee JWT login
+        const { data } = await axios.post('/api/employee/login', form);
+        localStorage.setItem('employeeToken', data.token);
+        localStorage.setItem('employeeData',  JSON.stringify(data.employee));
+        localStorage.setItem('employeeStore', JSON.stringify(data.employee.store));
+        toast.success(`Welcome, ${data.employee.name}!`);
+        router.push('/employee/dashboard');
+      } else {
+        // Store owner — this page is only needed if they lose their Clerk session.
+        // For owners, redirect to sign-in which will then redirect back to /store.
+        toast('Store owners sign in via Clerk. Redirecting...', { icon: 'ℹ️' });
+        router.push('/sign-in?redirect_url=/store');
+      }
     } catch (error) {
       toast.error(error?.response?.data?.error || 'Login failed');
     } finally {
@@ -49,103 +55,89 @@ export default function StoreLoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
-          {/* Header */}
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-14 h-14 bg-green-100 rounded-2xl mb-3">
-              <Store size={26} className="text-green-600" />
-            </div>
-            <h1 className="text-xl font-bold text-slate-800">Store Login</h1>
-            <p className="text-slate-400 text-sm mt-1">Sign in as Store Owner or Employee</p>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Email Address
-              </label>
-              <div className="relative">
-                <Mail
-                  size={16}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  placeholder="you@store.com"
-                  className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400 transition"
-                />
-              </div>
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
-              <div className="relative">
-                <Lock
-                  size={16}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="••••••••"
-                  className="w-full pl-9 pr-10 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-100 focus:border-green-400 transition"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
-              </div>
-            </div>
-
+          {/* Login type toggle */}
+          <div className="flex rounded-xl overflow-hidden border border-slate-200 mb-6">
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white py-2.5 rounded-lg font-medium text-sm transition-all disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
-            >
-              {loading ? (
-                <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-              ) : (
-                <LogIn size={16} />
-              )}
-              {loading ? 'Signing in...' : 'Sign In'}
+              type="button"
+              onClick={() => setLoginType('owner')}
+              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${loginType === 'owner' ? 'bg-green-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+              <Store size={15} /> Store Owner
             </button>
-          </form>
-
-          {/* Info box */}
-          <div className="mt-5 p-3 bg-slate-50 rounded-xl border border-slate-100">
-            <div className="flex items-start gap-2.5">
-              <Users size={15} className="text-slate-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-slate-500 space-y-1">
-                <p>
-                  <span className="font-medium text-slate-600">Store Owner:</span> Use your
-                  registered store email & password
-                </p>
-                <p>
-                  <span className="font-medium text-slate-600">Employee:</span> Use credentials
-                  given by your store owner
-                </p>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setLoginType('employee')}
+              className={`flex-1 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${loginType === 'employee' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+              <Users size={15} /> Employee
+            </button>
           </div>
+
+          {loginType === 'owner' ? (
+            /* Store owner — use Clerk */
+            <div className="text-center py-4">
+              <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                <Store size={26} className="text-green-600" />
+              </div>
+              <h2 className="font-bold text-slate-800 mb-1">Store Owner Login</h2>
+              <p className="text-sm text-slate-500 mb-5">Sign in with your KingCart account to access the store panel.</p>
+              <Link href="/sign-in?redirect_url=/store"
+                className="w-full inline-flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white py-2.5 rounded-lg font-medium text-sm transition-all">
+                <LogIn size={16} /> Sign in with KingCart
+              </Link>
+              <p className="text-xs text-slate-400 mt-4">
+                Don't have a store?{' '}
+                <Link href="/create-store" className="text-green-600 hover:underline font-medium">Apply here</Link>
+              </p>
+            </div>
+          ) : (
+            /* Employee — JWT login */
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="text-center mb-4">
+                <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-2">
+                  <Users size={26} className="text-blue-600" />
+                </div>
+                <h2 className="font-bold text-slate-800">Employee Login</h2>
+                <p className="text-xs text-slate-400 mt-1">Use credentials given by your store owner</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Email Address</label>
+                <div className="relative">
+                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    placeholder="you@store.com"
+                    className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+                <div className="relative">
+                  <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder="••••••••"
+                    className="w-full pl-9 pr-10 py-2.5 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 transition" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" disabled={loading}
+                className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-2.5 rounded-lg font-medium text-sm transition-all disabled:opacity-60 flex items-center justify-center gap-2 mt-2">
+                {loading ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <LogIn size={16} />}
+                {loading ? 'Signing in...' : 'Sign In as Employee'}
+              </button>
+            </form>
+          )}
         </div>
 
-        <p className="text-center text-xs text-slate-400 mt-5">
-          Want to register a store?{' '}
-          <Link href="/create-store" className="text-green-600 hover:underline font-medium">
-            Apply here
-          </Link>{' '}
-          •{' '}
-          <Link href="/" className="text-green-600 hover:underline font-medium">
-            Back to Homepage
+        <div className="flex items-center justify-center gap-4 mt-5">
+          <Link href="/" className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
+            <ArrowLeft size={12} /> Back to Homepage
           </Link>
-        </p>
+          <span className="text-slate-300">•</span>
+          <Link href="/create-store" className="text-xs text-green-600 hover:underline">Register a Store</Link>
+        </div>
       </div>
     </div>
   );

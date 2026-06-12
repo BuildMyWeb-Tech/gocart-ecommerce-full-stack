@@ -1,6 +1,6 @@
 // app/api/cart/route.js
 import prisma from '@/lib/prisma';
-import { clerkClient, getAuth } from '@clerk/nextjs/server';
+import { clerkClient, getAuth, auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 
 async function ensureUserExists(userId) {
@@ -22,7 +22,7 @@ async function ensureUserExists(userId) {
 // Cart item shape: { variantId, productId, storeId, quantity, price, ... }
 export async function POST(request) {
   try {
-    const { userId } = getAuth(request);
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await ensureUserExists(userId);
@@ -61,7 +61,7 @@ export async function POST(request) {
 // GET /api/cart — Fetch cart with live variant stock validation
 export async function GET(request) {
   try {
-    const { userId } = getAuth(request);
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await ensureUserExists(userId);

@@ -94,7 +94,7 @@ export default function StoreSettingsPage() {
               <RefreshCw size={14} /> Refresh
             </button>
             <button onClick={handleSave} disabled={saving}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm transition-all ${saved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-800 text-white hover:bg-slate-900'} ${saving ? 'opacity-60 cursor-not-allowed' : ''}`}>
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm transition-all ${saved ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-green-800 text-white hover:bg-green-900'} ${saving ? 'opacity-60 cursor-not-allowed' : ''}`}>
               {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : <Save size={14} />}
               {saving ? 'Saving…' : saved ? 'Saved' : 'Save Settings'}
             </button>

@@ -96,8 +96,6 @@
             📄 route.js
          📁 update
             📄 route.js
-      📁 inngest
-         📄 route.js
       📁 inventory
          📁 deduct
             📄 route.js
@@ -125,13 +123,8 @@
             📄 route.js
          📁 top-stores
             📄 route.js
-      📁 sales
-         📁 sync
-            📄 route.js
       📁 store
          📁 ai
-            📄 route.js
-         📁 billing
             📄 route.js
          📁 create
             📄 route.js
@@ -149,18 +142,16 @@
             📄 route.js
             📁 variant
                📄 route.js
-         📁 products-for-billing
-            📄 route.js
          📁 settings
             📄 route.js
          📁 stock-toggle
             📄 route.js
       📁 stripe
          📄 route.js
+      📁 wishlist
+         📄 route.js
    📁 employee
       📁 add-product
-         📄 page.jsx
-      📁 billing
          📄 page.jsx
       📁 categories
          📄 page.jsx
@@ -181,12 +172,13 @@
    📄 globals.css
    📄 layout.jsx
    📄 show-structure.js
+   📁 sign-in
+      📁 [[...sign-in]]
+         📄 page.jsx
    📁 store
       📁 add-product
          📄 page.jsx
       📁 analytics
-         📄 page.jsx
-      📁 billing
          📄 page.jsx
       📁 categories
          📄 page.jsx
@@ -245,8 +237,6 @@
    📄 Rating.jsx
    📄 RatingModal.jsx
    📁 store
-      📄 BillFormatter.js
-      📄 PrintService.js
       📄 StoreLayout.jsx
       📄 StoreNavbar.jsx
       📄 StoreSidebar.jsx
@@ -256,9 +246,6 @@
    📄 openai.js
 📄 fixSales.mjs
 📄 How_To_Run_Project.pdf
-📁 inngest
-   📄 client.js
-   📄 functions.js
 📄 jsconfig.json
 📁 lib
    📁 features
@@ -275,7 +262,6 @@
    📄 prisma.js
    📄 reportUtils.js
    📄 store.js
-   📄 storeSettings.js
 📄 middleware.ts
 📁 middlewares
    📄 authAdmin.js
@@ -300,8 +286,8 @@
          📄 migration.sql
       📁 20260408171746_add_product_variants
          📄 migration.sql
+      📁 20260609075223_refactor_multivendor
+         📄 migration.sql
       📄 migration_lock.toml
    📄 schema.prisma
 📄 README.md
-📄 show-structure.js
-📄 show-structure.txt

@@ -1,12 +1,12 @@
 // middleware.ts
-import { clerkMiddleware, getAuth } from '@clerk/nextjs/server';
+import { clerkMiddleware } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export default clerkMiddleware((auth, req: NextRequest) => {
   const { pathname } = req.nextUrl;
 
-  // ── Employee routes: bypass Clerk, handled by JWT ──────────────────────────
+  // Employee routes — bypass Clerk entirely
   if (
     pathname.startsWith('/employee') ||
     pathname.startsWith('/api/employee/') ||
@@ -15,29 +15,12 @@ export default clerkMiddleware((auth, req: NextRequest) => {
     return NextResponse.next();
   }
 
-  const { userId } = auth();
-
-  // ── Store panel: must be logged in ─────────────────────────────────────────
-  if (pathname.startsWith('/store') || pathname.startsWith('/api/store/')) {
-    if (!userId) {
-      const signInUrl = new URL('/sign-in', req.url);
-      signInUrl.searchParams.set('redirect_url', pathname);
-      return NextResponse.redirect(signInUrl);
-    }
+  // Store login — public
+  if (pathname === '/store/login') {
     return NextResponse.next();
   }
 
-  // ── Admin panel: must be logged in ─────────────────────────────────────────
-  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin/')) {
-    if (!userId) {
-      const signInUrl = new URL('/sign-in', req.url);
-      signInUrl.searchParams.set('redirect_url', pathname);
-      return NextResponse.redirect(signInUrl);
-    }
-    return NextResponse.next();
-  }
-
-  // ── Everything else: public (Clerk handles sign-in pages etc.) ─────────────
+  // Everything else — pass through, let layouts handle auth
   return NextResponse.next();
 });
 

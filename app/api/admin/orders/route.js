@@ -1,13 +1,12 @@
   // app/api/admin/orders/route.js
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
-import { getAuth } from '@clerk/nextjs/server';
+import { getAdminUserId } from '@/lib/getAdminUserId';
 import { NextResponse } from 'next/server';
 
-// GET /api/admin/orders — Admin: all orders with filters
 export async function GET(request) {
   try {
-    const { userId } = getAuth(request);
+    const userId = await getAdminUserId(request);
     const isAdminUser = await authAdmin(userId);
     if (!isAdminUser) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
@@ -21,20 +20,17 @@ export async function GET(request) {
     const limit         = Math.min(100, parseInt(searchParams.get('limit') || '20'));
 
     const where = {};
-
     if (statusFilter && statusFilter !== 'ALL') where.status = statusFilter;
     if (storeIdFilter && storeIdFilter !== 'ALL') where.storeId = storeIdFilter;
-
     if (dateFrom || dateTo) {
       where.createdAt = {};
       if (dateFrom) where.createdAt.gte = new Date(dateFrom);
-      if (dateTo) where.createdAt.lte = new Date(dateTo);
+      if (dateTo)   where.createdAt.lte = new Date(dateTo);
     }
-
     if (search) {
       where.OR = [
         { id: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
+        { user: { name:  { contains: search, mode: 'insensitive' } } },
         { user: { email: { contains: search, mode: 'insensitive' } } },
       ];
     }
@@ -43,7 +39,7 @@ export async function GET(request) {
       prisma.order.findMany({
         where,
         include: {
-          user: { select: { id: true, name: true, email: true, image: true } },
+          user:  { select: { id: true, name: true, email: true, image: true } },
           store: { select: { id: true, name: true, username: true, logo: true } },
           address: true,
           orderItems: {
@@ -65,20 +61,16 @@ export async function GET(request) {
       prisma.order.count({ where }),
     ]);
 
-    // Revenue summary for filtered results
     const revenueAgg = await prisma.order.aggregate({
       where: { ...where, status: { notIn: ['CANCELLED', 'RETURNED'] } },
       _sum: { total: true, commissionAmt: true },
     });
 
     return NextResponse.json({
-      orders,
-      total,
-      page,
-      limit,
+      orders, total, page, limit,
       totalPages: Math.ceil(total / limit),
       summary: {
-        totalRevenue: revenueAgg._sum.total || 0,
+        totalRevenue:    revenueAgg._sum.total || 0,
         totalCommission: revenueAgg._sum.commissionAmt || 0,
       },
     });

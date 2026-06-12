@@ -1,14 +1,13 @@
 // app/api/admin/dashboard/route.js
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
-import { getAuth } from '@clerk/nextjs/server';
+import { getAdminUserId } from '@/lib/getAdminUserId';
 import { NextResponse } from 'next/server';
 import { round2, EXCLUDED_STATUSES } from '@/lib/reportUtils';
 
-// GET /api/admin/dashboard
 export async function GET(request) {
   try {
-    const { userId } = getAuth(request);
+    const userId = await getAdminUserId(request);
     const isAdminUser = await authAdmin(userId);
     if (!isAdminUser) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
@@ -16,38 +15,11 @@ export async function GET(request) {
     todayStart.setHours(0, 0, 0, 0);
 
     const [
-      totalOrders,
-      totalStores,
-      activeStores,
-      pendingStores,
-      totalProducts,
-      totalCustomers,
-
-      // Revenue aggregation
-      revenueAgg,
-      todayRevenueAgg,
-
-      // Order status counts
-      pendingOrders,
-      confirmedOrders,
-      packedOrders,
-      shippedOrders,
-      outForDeliveryOrders,
-      deliveredOrders,
-      cancelledOrders,
-      returnedOrders,
-
-      // Top stores by revenue (this month)
-      topStoresRaw,
-
-      // Recent orders
-      recentOrders,
-
-      // Low stock alert
-      lowStockVariants,
-
-      // Daily revenue last 30 days
-      last30DaysOrders,
+      totalOrders, totalStores, activeStores, pendingStores, totalProducts, totalCustomers,
+      revenueAgg, todayRevenueAgg,
+      pendingOrders, confirmedOrders, packedOrders, shippedOrders,
+      outForDeliveryOrders, deliveredOrders, cancelledOrders, returnedOrders,
+      topStoresRaw, recentOrders, lowStockVariants, last30DaysOrders,
     ] = await Promise.all([
       prisma.order.count(),
       prisma.store.count(),
@@ -56,23 +28,16 @@ export async function GET(request) {
       prisma.product.count(),
       prisma.user.count({ where: { store: null } }),
 
-      // All time revenue
       prisma.order.aggregate({
         where: { status: { notIn: EXCLUDED_STATUSES } },
         _sum: { total: true, commissionAmt: true },
       }),
-
-      // Today's revenue
       prisma.order.aggregate({
-        where: {
-          createdAt: { gte: todayStart },
-          status: { notIn: EXCLUDED_STATUSES },
-        },
+        where: { createdAt: { gte: todayStart }, status: { notIn: EXCLUDED_STATUSES } },
         _sum: { total: true, commissionAmt: true },
         _count: { id: true },
       }),
 
-      // Order status counts
       prisma.order.count({ where: { status: 'PENDING' } }),
       prisma.order.count({ where: { status: 'CONFIRMED' } }),
       prisma.order.count({ where: { status: 'PACKED' } }),
@@ -82,14 +47,11 @@ export async function GET(request) {
       prisma.order.count({ where: { status: 'CANCELLED' } }),
       prisma.order.count({ where: { status: 'RETURNED' } }),
 
-      // Top 5 stores this month
       prisma.order.groupBy({
         by: ['storeId'],
         where: {
           status: { notIn: EXCLUDED_STATUSES },
-          createdAt: {
-            gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-          },
+          createdAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
         },
         _sum: { total: true, commissionAmt: true },
         _count: { id: true },
@@ -97,7 +59,6 @@ export async function GET(request) {
         take: 5,
       }),
 
-      // Recent 10 orders
       prisma.order.findMany({
         take: 10,
         orderBy: { createdAt: 'desc' },
@@ -107,7 +68,6 @@ export async function GET(request) {
         },
       }),
 
-      // Low stock: variants with stock <= 5
       prisma.productVariant.findMany({
         where: { stock: { lte: 5 } },
         include: {
@@ -122,12 +82,9 @@ export async function GET(request) {
         take: 20,
       }),
 
-      // Last 30 days orders for chart
       prisma.order.findMany({
         where: {
-          createdAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-          },
+          createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
           status: { notIn: EXCLUDED_STATUSES },
         },
         select: { total: true, commissionAmt: true, createdAt: true },
@@ -142,22 +99,18 @@ export async function GET(request) {
       select: { id: true, name: true, logo: true, username: true },
     });
     const storeDetailMap = Object.fromEntries(topStoreDetails.map((s) => [s.id, s]));
-
     const topStores = topStoresRaw.map((g, idx) => {
       const s = storeDetailMap[g.storeId] || {};
       return {
-        rank: idx + 1,
-        storeId: g.storeId,
-        name: s.name || 'Unknown',
-        logo: s.logo || null,
-        username: s.username || '',
+        rank: idx + 1, storeId: g.storeId,
+        name: s.name || 'Unknown', logo: s.logo || null, username: s.username || '',
         revenue: round2(g._sum.total || 0),
         commission: round2(g._sum.commissionAmt || 0),
         orders: g._count.id,
       };
     });
 
-    // Build daily chart data
+    // Daily chart data
     const buckets = {};
     for (const o of last30DaysOrders) {
       const key = o.createdAt.toISOString().split('T')[0];
@@ -168,9 +121,9 @@ export async function GET(request) {
     }
     const dailyData = Object.entries(buckets).map(([date, data]) => ({
       date,
-      revenue:    round2(data.revenue),
+      revenue: round2(data.revenue),
       commission: round2(data.commission),
-      count:      data.count,
+      count: data.count,
     }));
 
     const totalRevenue    = round2(revenueAgg._sum.total || 0);
@@ -178,52 +131,24 @@ export async function GET(request) {
 
     return NextResponse.json({
       dashboardData: {
-        // Counts
-        totalOrders,
-        totalStores,
-        activeStores,
-        pendingStores,
-        totalProducts,
-        totalCustomers,
-
-        // Revenue
-        totalRevenue,
-        totalCommission,
+        totalOrders, totalStores, activeStores, pendingStores, totalProducts, totalCustomers,
+        totalRevenue, totalCommission,
         platformRevenue: totalCommission,
         storeRevenue: round2(totalRevenue - totalCommission),
-
-        // Today
-        todayOrders:    todayRevenueAgg._count.id || 0,
-        todayRevenue:   round2(todayRevenueAgg._sum.total || 0),
+        todayOrders:     todayRevenueAgg._count.id || 0,
+        todayRevenue:    round2(todayRevenueAgg._sum.total || 0),
         todayCommission: round2(todayRevenueAgg._sum.commissionAmt || 0),
-
-        // Order pipeline
         orderStatus: {
-          pending:         pendingOrders,
-          confirmed:       confirmedOrders,
-          packed:          packedOrders,
-          shipped:         shippedOrders,
-          outForDelivery:  outForDeliveryOrders,
-          delivered:       deliveredOrders,
-          cancelled:       cancelledOrders,
-          returned:        returnedOrders,
+          pending: pendingOrders, confirmed: confirmedOrders, packed: packedOrders,
+          shipped: shippedOrders, outForDelivery: outForDeliveryOrders,
+          delivered: deliveredOrders, cancelled: cancelledOrders, returned: returnedOrders,
         },
-
-        topStores,
-        recentOrders,
-        dailyData,
-
-        // Low stock alerts
+        topStores, recentOrders, dailyData,
         lowStockAlerts: lowStockVariants.map((v) => ({
-          variantId:   v.id,
-          color:       v.color,
-          size:        v.size,
-          sku:         v.sku,
-          stock:       v.stock,
-          productId:   v.productId,
-          productName: v.product.name,
-          storeName:   v.product.store?.name || '',
-          storeId:     v.product.store?.id || '',
+          variantId: v.id, color: v.color, size: v.size, sku: v.sku, stock: v.stock,
+          productId: v.productId, productName: v.product.name,
+          storeName: v.product.store?.name || '',
+          storeId:   v.product.store?.id || '',
         })),
       },
     });
