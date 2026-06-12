@@ -1,31 +1,32 @@
 // app/api/orders/route.js
 import prisma from '@/lib/prisma';
-import { clerkClient, getAuth } from '@clerk/nextjs/server';
+import { clerkClient, auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { inngest } from '@/inngest/client';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
 
 async function ensureUserExists(userId) {
-  const client = await clerkClient();
+  const client    = await clerkClient();
   const clerkUser = await client.users.getUser(userId);
   await prisma.user.upsert({
-    where: { id: userId },
+    where:  { id: userId },
     update: {},
     create: {
-      id: userId,
-      name: `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || 'User',
+      id:    userId,
+      name:  `${clerkUser.firstName || ''} ${clerkUser.lastName || ''}`.trim() || 'User',
       email: clerkUser.emailAddresses[0]?.emailAddress || '',
       image: clerkUser.imageUrl || '',
     },
   });
 }
 
-// ── GET: fetch all orders for the logged-in buyer ─────────────────
+// GET /api/orders — Fetch all orders for the logged-in buyer
 export async function GET(request) {
   try {
-    const { userId } = getAuth(request);
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await ensureUserExists(userId);
@@ -35,13 +36,16 @@ export async function GET(request) {
       include: {
         orderItems: {
           include: {
-            product: {
-              select: { id: true, name: true, images: true, price: true, category: true },
+            variant: {
+              select: {
+                id: true, color: true, size: true, price: true, sku: true,
+                product: { select: { id: true, name: true, images: true, slug: true } },
+              },
             },
           },
         },
-        address: true,
-        store: { select: { name: true, username: true, logo: true } },
+        address:  true,
+        store:    { select: { id: true, name: true, username: true, logo: true } },
         timeline: { orderBy: { createdAt: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },
@@ -54,10 +58,10 @@ export async function GET(request) {
   }
 }
 
-// ── POST: create a new order ──────────────────────────────────────
+// POST /api/orders — Create orders (auto-split by store)
 export async function POST(request) {
   try {
-    const { userId } = getAuth(request);
+    const { userId } = await auth();
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     await ensureUserExists(userId);
@@ -69,190 +73,164 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Cart is empty' }, { status: 400 });
     if (!addressId)
       return NextResponse.json({ error: 'Delivery address is required' }, { status: 400 });
-    if (!paymentMethod)
-      return NextResponse.json({ error: 'Payment method is required' }, { status: 400 });
+    if (!['COD', 'STRIPE'].includes(paymentMethod))
+      return NextResponse.json({ error: 'Invalid payment method' }, { status: 400 });
 
-    // ── Resolve storeId ───────────────────────────────────────────
-    let storeId = items[0]?.storeId ?? null;
-    if (!storeId) {
-      const firstProduct = await prisma.product.findUnique({
-        where: { id: items[0]?.id },
-        select: { storeId: true },
-      });
-      storeId = firstProduct?.storeId ?? null;
-    }
-    if (!storeId) {
-      return NextResponse.json(
-        { error: 'This product is a global catalogue item and cannot be purchased through a store checkout.' },
-        { status: 400 }
-      );
-    }
+    const address = await prisma.address.findFirst({ where: { id: addressId, userId } });
+    if (!address)
+      return NextResponse.json({ error: 'Address not found' }, { status: 400 });
 
-    // ── Validate all items belong to same store ───────────────────
+    const variantIds = items.map((i) => i.variantId);
+    const variants   = await prisma.productVariant.findMany({
+      where:   { id: { in: variantIds } },
+      include: {
+        product: {
+          select: {
+            id: true, name: true, storeId: true, status: true,
+            store: { select: { id: true, name: true, isActive: true, status: true } },
+          },
+        },
+      },
+    });
+
+    const variantMap = {};
+    variants.forEach((v) => { variantMap[v.id] = v; });
+
+    // Stock validation
+    const stockErrors = [];
     for (const item of items) {
-      const itemStoreId = item.storeId ?? null;
-      if (itemStoreId && itemStoreId !== storeId) {
-        return NextResponse.json(
-          { error: 'Your cart contains products from multiple stores. Please purchase from one store at a time.' },
-          { status: 400 }
+      const variant = variantMap[item.variantId];
+      if (!variant) { stockErrors.push(`Variant ${item.variantId} not found`); continue; }
+      if (variant.product.status !== 'ACTIVE') { stockErrors.push(`"${variant.product.name}" is not available`); continue; }
+      if (!variant.product.store.isActive || variant.product.store.status !== 'ACTIVE') { stockErrors.push(`Store for "${variant.product.name}" is not active`); continue; }
+      if (variant.stock < item.quantity) {
+        stockErrors.push(variant.stock === 0
+          ? `"${variant.product.name}" (${variant.color}/${variant.size}) is out of stock`
+          : `"${variant.product.name}" (${variant.color}/${variant.size}) only has ${variant.stock} in stock`
         );
       }
     }
+    if (stockErrors.length > 0)
+      return NextResponse.json({ error: stockErrors.join('. ') }, { status: 400 });
 
-    // ── Validate store exists and is active ───────────────────────
-    const store = await prisma.store.findUnique({
-      where: { id: storeId },
-      select: { id: true, isActive: true },
-    });
-    if (!store) return NextResponse.json({ error: 'Store not found' }, { status: 400 });
-    if (!store.isActive)
-      return NextResponse.json({ error: 'This store is currently inactive' }, { status: 400 });
-
-    // ── PRE-ORDER STOCK VALIDATION ────────────────────────────────
-    // Fetch live stock for all items in one query — prevents overselling
-    const productIds = items.map((item) => item.id);
-    const liveProducts = await prisma.product.findMany({
-      where: { id: { in: productIds } },
-      select: { id: true, name: true, quantity: true, inStock: true },
-    });
-
-    const stockMap = {};
-    liveProducts.forEach((p) => { stockMap[p.id] = p; });
-
-    const stockErrors = [];
-    for (const item of items) {
-      const live = stockMap[item.id];
-      if (!live) {
-        stockErrors.push(`Product "${item.name || item.id}" not found`);
-        continue;
-      }
-      if (!live.inStock || live.quantity < item.quantity) {
-        if (live.quantity === 0) {
-          stockErrors.push(`"${live.name}" is out of stock`);
-        } else {
-          stockErrors.push(
-            `"${live.name}" only has ${live.quantity} in stock, but you requested ${item.quantity}`
-          );
-        }
-      }
-    }
-
-    if (stockErrors.length > 0) {
-      return NextResponse.json(
-        { error: stockErrors.join('. ') },
-        { status: 400 }
-      );
-    }
-    // ── END STOCK VALIDATION ──────────────────────────────────────
-
-    // ── Resolve coupon ────────────────────────────────────────────
-    let couponData = {};
-    let isCouponUsed = false;
-    let discount = 0;
+    // Coupon
+    let coupon = null;
+    let discountPct = 0;
     if (couponCode) {
-      const coupon = await prisma.coupon.findUnique({ where: { code: couponCode } });
+      coupon = await prisma.coupon.findUnique({ where: { code: couponCode } });
       if (coupon && new Date(coupon.expiresAt) > new Date()) {
-        couponData = coupon;
-        isCouponUsed = true;
-        discount = coupon.discount;
+        discountPct = coupon.discount;
+      } else {
+        coupon = null;
       }
     }
 
-    // ── Calculate total ───────────────────────────────────────────
-    const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const total = isCouponUsed ? subtotal - (subtotal * discount) / 100 : subtotal;
+    // Group by store
+    const storeGroups = {};
+    for (const item of items) {
+      const storeId = variantMap[item.variantId].product.storeId;
+      if (!storeGroups[storeId]) storeGroups[storeId] = [];
+      storeGroups[storeId].push({ ...item, variant: variantMap[item.variantId] });
+    }
 
-    // ── Create order + deduct stock atomically ────────────────────
-    const order = await prisma.$transaction(async (tx) => {
-      const newOrder = await tx.order.create({
-        data: {
-          userId,
-          storeId,
-          addressId,
-          total,
-          paymentMethod,
-          isPaid: false,
-          isCouponUsed,
-          coupon: couponData,
-          orderItems: {
-            create: items.map((item) => ({
-              productId: item.id,
-              quantity: item.quantity,
-              price: item.price,
-            })),
+    const storeIds    = Object.keys(storeGroups);
+    const commissions = await prisma.commission.findMany({ where: { storeId: { in: storeIds } } });
+    const commissionMap = {};
+    commissions.forEach((c) => { commissionMap[c.storeId] = c.percentage; });
+
+    // Create orders in transaction
+    const createdOrders = await prisma.$transaction(async (tx) => {
+      const orders = [];
+
+      for (const [storeId, storeItems] of Object.entries(storeGroups)) {
+        const subtotal     = storeItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
+        const discountAmt  = discountPct > 0 ? (subtotal * discountPct) / 100 : 0;
+        const commissionAmt = ((commissionMap[storeId] ?? 0) * subtotal) / 100;
+        const total         = subtotal - discountAmt;
+
+        const order = await tx.order.create({
+          data: {
+            userId, storeId, addressId,
+            subtotal, shippingCost: 0, commissionAmt, total,
+            status: 'PENDING', isPaid: false, paymentMethod,
+            isCouponUsed:   !!coupon,
+            couponCode:     coupon?.code || null,
+            couponDiscount: discountAmt,
+            orderItems: {
+              create: storeItems.map((item) => ({
+                variantId: item.variantId,
+                productId: item.variant.product.id,
+                quantity:  item.quantity,
+                price:     item.price,
+              })),
+            },
           },
-        },
-        include: { orderItems: true },
-      });
-
-      // ── Log initial timeline entry ────────────────────────────
-      await tx.orderTimeline.create({
-        data: {
-          orderId: newOrder.id,
-          status: 'ORDER_PLACED',
-          changedBy: 'SYSTEM',
-          note: 'Order placed successfully',
-        },
-      });
-
-      // ── Deduct inventory atomically ───────────────────────────
-      // Re-check inside transaction to handle concurrent orders
-      for (const item of items) {
-        const product = await tx.product.findUnique({
-          where: { id: item.id },
-          select: { quantity: true, name: true },
         });
 
-        if (!product || product.quantity < item.quantity) {
-          // Throw to rollback the entire transaction
-          throw new Error(
-            `Insufficient stock for "${product?.name || item.id}". ` +
-            `Available: ${product?.quantity ?? 0}, Requested: ${item.quantity}`
-          );
+        await tx.orderTimeline.create({
+          data: { orderId: order.id, status: 'PENDING', changedBy: 'SYSTEM', note: 'Order placed successfully' },
+        });
+
+        for (const item of storeItems) {
+          const fresh = await tx.productVariant.findUnique({ where: { id: item.variantId }, select: { stock: true } });
+          if (!fresh || fresh.stock < item.quantity) {
+            throw new Error(`Insufficient stock for "${item.variant.product.name}" (${item.variant.color}/${item.variant.size})`);
+          }
+          const newStock = fresh.stock - item.quantity;
+          await tx.productVariant.update({ where: { id: item.variantId }, data: { stock: newStock } });
+          await tx.inventory.upsert({
+            where:  { variantId: item.variantId },
+            update: { quantity: newStock },
+            create: { variantId: item.variantId, storeId, quantity: newStock, lowStock: 10 },
+          });
         }
 
-        const newQty = product.quantity - item.quantity;
-
-        // Update product quantity + inStock flag
-        await tx.product.update({
-          where: { id: item.id },
-          data: { quantity: newQty, inStock: newQty > 0 },
-        });
-
-        // Keep Inventory table in sync
-        await tx.inventory.updateMany({
-          where: { productId: item.id, storeId },
-          data: { quantity: newQty },
-        });
+        orders.push(order);
       }
 
-      return newOrder;
+      return orders;
     });
 
-    // ── Trigger Inngest to create Sale record ─────────────────────
-    await inngest.send({ name: 'app/order.created', data: { orderId: order.id } });
-
-    // ── Stripe checkout ───────────────────────────────────────────
+    // Stripe payment
     if (paymentMethod === 'STRIPE') {
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: items.map((item) => ({
+      if (!stripe) {
+        return NextResponse.json({ error: 'Stripe is not configured' }, { status: 500 });
+      }
+
+      const lineItems = items.map((item) => {
+        const variant = variantMap[item.variantId];
+        return {
           price_data: {
             currency: 'inr',
-            product_data: { name: item.name },
+            product_data: { name: `${variant.product.name} (${variant.color}/${variant.size})` },
             unit_amount: Math.round(item.price * 100),
           },
           quantity: item.quantity,
-        })),
-        mode: 'payment',
-        success_url: `${process.env.NEXT_PUBLIC_APP_URL}/orders`,
-        cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/cart`,
-        metadata: { orderId: order.id },
+        };
       });
-      return NextResponse.json({ message: 'Order placed successfully', order, session });
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ['card'],
+        line_items:   lineItems,
+        mode:         'payment',
+        success_url:  `${process.env.NEXT_PUBLIC_APP_URL}/orders`,
+        cancel_url:   `${process.env.NEXT_PUBLIC_APP_URL}/cart`,
+        metadata:     { orderIds: createdOrders.map((o) => o.id).join(',') },
+      });
+
+      return NextResponse.json({
+        message: `${createdOrders.length} order(s) placed successfully`,
+        orders:  createdOrders,
+        session,
+      });
     }
 
-    return NextResponse.json({ message: 'Order placed successfully', order });
+    // ✅ COD — return response (this was the missing return)
+    return NextResponse.json({
+      message: `${createdOrders.length} order(s) placed successfully`,
+      orders:  createdOrders,
+    });
+
   } catch (error) {
     console.error('POST /api/orders error:', error);
     return NextResponse.json({ error: error.message }, { status: 400 });

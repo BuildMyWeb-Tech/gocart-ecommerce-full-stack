@@ -1,53 +1,55 @@
 // C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\(public)\layout.jsx
-'use client'
-import Banner from "@/components/Banner";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { useEffect } from "react";
+'use client';
+import Banner   from "@/components/Banner";
+import Navbar   from "@/components/Navbar";
+import Footer   from "@/components/Footer";
+import { useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchProducts } from "@/lib/features/product/productSlice";
-import { useUser, useAuth } from "@clerk/nextjs";
-
-// ✅ Correct thunk imports
+import { useUser } from "@clerk/nextjs";
 import { fetchCartThunk, uploadCartThunk } from "@/lib/features/cart/cartSlice";
-import { fetchAddress } from "@/lib/features/address/addressSlice";
+import { fetchAddress }    from "@/lib/features/address/addressSlice";
 import { fetchUserRatings } from "@/lib/features/rating/ratingSlice";
 
 export default function PublicLayout({ children }) {
+  const dispatch  = useDispatch();
+  const { user }  = useUser();
+  const { items } = useSelector((state) => state.cart);
+  const isFirstLoad    = useRef(true);
+  const prevUserRef    = useRef(null);
 
-    const dispatch = useDispatch()
-    const { user } = useUser()
-    const { getToken } = useAuth()
+  // Fetch products once on mount
+  useEffect(() => {
+    dispatch(fetchProducts({}));
+  }, []);
 
-    const { items } = useSelector((state) => state.cart)
+  // Fetch user data when user signs in
+  useEffect(() => {
+    if (user && prevUserRef.current !== user.id) {
+      prevUserRef.current = user.id;
+      dispatch(fetchCartThunk());
+      dispatch(fetchAddress());
+      dispatch(fetchUserRatings());
+    }
+  }, [user]);
 
-    // Fetch products on load
-    useEffect(() => {
-        dispatch(fetchProducts({}))
-    }, [])
+  // Upload cart to DB when items change — but skip the very first render
+  useEffect(() => {
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      return;
+    }
+    if (user) {
+      dispatch(uploadCartThunk());
+    }
+  }, [items]);
 
-    // Fetch cart + address + ratings when user logs in
-    useEffect(() => {
-        if (user) {
-            dispatch(fetchCartThunk({ getToken }))
-            dispatch(fetchAddress({ getToken }))
-            dispatch(fetchUserRatings({ getToken }))
-        }
-    }, [user])
-
-    // Upload cart to backend when cart updates
-    useEffect(() => {
-        if (user) {
-            dispatch(uploadCartThunk({ getToken }))
-        }
-    }, [items])
-
-    return (
-        <>
-            <Banner />
-            <Navbar />
-            {children}
-            <Footer />
-        </>
-    );
+  return (
+    <>
+      <Banner />
+      <Navbar />
+      {children}
+      <Footer />
+    </>
+  );
 }

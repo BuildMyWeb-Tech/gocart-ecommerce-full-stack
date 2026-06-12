@@ -1,79 +1,53 @@
 // app/api/reports/top-products/route.js
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/reports/top-products
-//
-// Joins OrderItem → Sale via referenceId (orderId) to rank products.
-// Returns top N products by revenue for the Pie chart.
-//
-// Query params:
-//   period, from, to, storeId  (same as other report routes)
-//   limit   = number of products to return (default 10)
-// ─────────────────────────────────────────────────────────────────────────────
 import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import authSeller from '@/middlewares/authSeller';
 import { getAuth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
-import { buildDateRange, round2 } from '@/lib/reportUtils';
-import authEmployee from '@/middlewares/authEmployee';
+import { buildDateRange, round2, EXCLUDED_STATUSES } from '@/lib/reportUtils';
 
 async function resolveRole(request) {
-  const authHeader = request.headers.get('authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-  if (token) {
-    try {
-      const emp = await authEmployee(token);
-      if (emp) {
-        return {
-          role: 'EMPLOYEE',
-          storeId: emp.storeId,
-          employeeId: emp.role === 'STORE_OWNER' ? null : emp.id,
-        };
-      }
-    } catch {}
-  }
-
   const { userId } = getAuth(request);
-  if (!userId) return { role: null, storeId: null, employeeId: null };
-  const isAdmin = await authAdmin(userId);
-  if (isAdmin) return { role: 'ADMIN', storeId: null, employeeId: null };
+  if (!userId) return { role: null, storeId: null };
+  const isAdminUser = await authAdmin(userId);
+  if (isAdminUser) return { role: 'ADMIN', storeId: null };
   const storeId = await authSeller(userId);
-  if (storeId) return { role: 'STORE', storeId, employeeId: null };
-  return { role: null, storeId: null, employeeId: null };
+  if (storeId) return { role: 'STORE', storeId };
+  return { role: null, storeId: null };
 }
 
+// GET /api/reports/top-products
 export async function GET(request) {
   try {
     const { role, storeId: myStoreId } = await resolveRole(request);
-    if (!role) return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+    if (!role) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
-    const period      = searchParams.get('period')  || 'month';
+    const period      = searchParams.get('period') || 'month';
     const from        = searchParams.get('from');
     const to          = searchParams.get('to');
     const filterStore = searchParams.get('storeId');
     const limit       = Math.min(parseInt(searchParams.get('limit') || '10'), 50);
 
-    const scopedStoreId = role === 'ADMIN' ? (filterStore || undefined) : myStoreId;
-    const dateRange = buildDateRange(period, from, to);
+    const dateRange     = buildDateRange(period, from, to);
+    const scopedStoreId = role === 'ADMIN' ? filterStore || undefined : myStoreId;
 
-    // ── 1. Get all Sale referenceIds (orderIds) in the date range ─
-    const sales = await prisma.sale.findMany({
+    // Get qualifying order IDs from Order table
+    const orders = await prisma.order.findMany({
       where: {
         createdAt: dateRange,
+        status: { notIn: EXCLUDED_STATUSES },
         ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
-        ...(identity.employeeId ? { employeeId: identity.employeeId } : {}),
       },
-      select: { referenceId: true },
+      select: { id: true },
     });
 
-    const orderIds = sales.map((s) => s.referenceId);
+    const orderIds = orders.map((o) => o.id);
     if (orderIds.length === 0) {
       return NextResponse.json({ products: [], meta: { period, total: 0 } });
     }
 
-    // ── 2. Aggregate OrderItems for those orders ──────────────────
+    // Aggregate OrderItems by productId
     const items = await prisma.orderItem.groupBy({
       by: ['productId'],
       where: { orderId: { in: orderIds } },
@@ -87,15 +61,23 @@ export async function GET(request) {
       return NextResponse.json({ products: [], meta: { period, total: 0 } });
     }
 
-    // ── 3. Fetch product names + images ───────────────────────────
+    // Fetch product metadata
     const productIds = items.map((i) => i.productId);
     const products   = await prisma.product.findMany({
       where: { id: { in: productIds } },
-      select: { id: true, name: true, images: true, category: true, price: true },
+      select: {
+        id: true,
+        name: true,
+        images: true,
+        slug: true,
+        store: { select: { id: true, name: true, username: true } },
+        categories: {
+          include: { category: { select: { name: true } } },
+        },
+      },
     });
     const productMap = Object.fromEntries(products.map((p) => [p.id, p]));
 
-    // ── 4. Build result ───────────────────────────────────────────
     const totalRevenue = items.reduce((s, i) => s + (i._sum.price || 0), 0);
 
     const result = items.map((item) => {
@@ -105,7 +87,9 @@ export async function GET(request) {
         productId: item.productId,
         name:      p.name || 'Unknown Product',
         image:     p.images?.[0] || null,
-        category:  p.category || [],
+        slug:      p.slug || '',
+        store:     p.store || null,
+        categories: (p.categories || []).map((c) => c.category.name),
         revenue:   rev,
         quantity:  item._sum.quantity || 0,
         orders:    item._count.orderId || 0,

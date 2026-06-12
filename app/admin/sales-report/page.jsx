@@ -6,22 +6,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@clerk/nextjs';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import Image from 'next/image';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
-  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
 import {
-  TrendingUp, TrendingDown, IndianRupee, ShoppingCart, Store,
+  TrendingUp, TrendingDown, IndianRupee, ShoppingCart,
   BarChart2, Download, RefreshCcw, Loader2, Package,
   ArrowUpRight, ArrowDownRight, Minus, FileText, FileSpreadsheet,
-  ChevronDown, Trophy, Globe,
+  ChevronDown, Trophy,
 } from 'lucide-react';
 
-// ── Constants ─────────────────────────────────────────────────────
 const PERIODS = [
   { value: 'today',     label: 'Today' },
   { value: 'yesterday', label: 'Yesterday' },
@@ -30,15 +27,16 @@ const PERIODS = [
   { value: 'year',      label: 'This Year' },
   { value: 'custom',    label: 'Custom' },
 ];
+
 const COMPARISONS = [
   { value: '',                    label: 'No Comparison' },
   { value: 'today_vs_yesterday',  label: 'Today vs Yesterday' },
   { value: 'month_vs_last_month', label: 'Month vs Last Month' },
   { value: 'year_vs_last_year',   label: 'Year vs Last Year' },
 ];
+
 const PIE_COLORS = ['#22c55e','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'];
 
-// ── KPI Card ──────────────────────────────────────────────────────
 function KpiCard({ title, value, sub, icon: Icon, color, growth, loading }) {
   const colors = {
     green:  { bg:'bg-green-50',  border:'border-green-100',  icon:'bg-green-100 text-green-600',  val:'text-green-700' },
@@ -61,23 +59,22 @@ function KpiCard({ title, value, sub, icon: Icon, color, growth, loading }) {
       {growth !== undefined && !loading && (
         <div className={`flex items-center gap-1 text-xs font-medium ${growth > 0 ? 'text-green-600' : growth < 0 ? 'text-red-500' : 'text-slate-400'}`}>
           {growth > 0 ? <ArrowUpRight size={13}/> : growth < 0 ? <ArrowDownRight size={13}/> : <Minus size={13}/>}
-          {Math.abs(growth)}% vs previous period
+          {Math.abs(growth)}% vs previous
         </div>
       )}
     </div>
   );
 }
 
-// ── Comparison Banner ─────────────────────────────────────────────
 function ComparisonBanner({ data }) {
   if (!data) return null;
   const { labels, revenue, orders } = data;
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       {[
-        { label: 'Revenue', data: revenue, fmt: (v) => `₹${v.toLocaleString('en-IN')}` },
-        { label: 'Orders',  data: orders,  fmt: (v) => v },
-      ].map(({ label, data: d, fmt }) => (
+        { label: 'Revenue', d: revenue, fmt: (v) => `₹${v.toLocaleString('en-IN')}` },
+        { label: 'Orders',  d: orders,  fmt: (v) => v },
+      ].map(({ label, d, fmt }) => (
         <div key={label} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
           <p className="text-xs text-slate-500 font-medium mb-3">{label}: {labels[0]} vs {labels[1]}</p>
           <div className="flex items-end justify-between">
@@ -94,7 +91,6 @@ function ComparisonBanner({ data }) {
   );
 }
 
-// ── Custom Tooltip ─────────────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
@@ -109,23 +105,20 @@ const ChartTooltip = ({ active, payload, label }) => {
   );
 };
 
-// ── Main Page ──────────────────────────────────────────────────────
 export default function AdminSalesReport() {
-  const { getToken } = useAuth();
+  const [period,      setPeriod]      = useState('month');
+  const [customFrom,  setCustomFrom]  = useState('');
+  const [customTo,    setCustomTo]    = useState('');
+  const [comparison,  setComparison]  = useState('');
+  const [filterStore, setFilterStore] = useState('');
+  const [chartTab,    setChartTab]    = useState('line');
+  const [storeSort,   setStoreSort]   = useState('revenue');
 
-  const [period,       setPeriod]       = useState('month');
-  const [customFrom,   setCustomFrom]   = useState('');
-  const [customTo,     setCustomTo]     = useState('');
-  const [comparison,   setComparison]   = useState('');
-  const [filterStore,  setFilterStore]  = useState('');
-  const [chartTab,     setChartTab]     = useState('line');
-  const [storeSort,    setStoreSort]    = useState('revenue');
-
-  const [summary,      setSummary]      = useState(null);
-  const [trend,        setTrend]        = useState([]);
-  const [products,     setProducts]     = useState([]);
-  const [topStores,    setTopStores]    = useState([]);
-  const [allStores,    setAllStores]    = useState([]);
+  const [summary,   setSummary]   = useState(null);
+  const [trend,     setTrend]     = useState([]);
+  const [products,  setProducts]  = useState([]);
+  const [topStores, setTopStores] = useState([]);
+  const [allStores, setAllStores] = useState([]);
 
   const [loadingSummary,  setLoadingSummary]  = useState(false);
   const [loadingTrend,    setLoadingTrend]    = useState(false);
@@ -134,15 +127,12 @@ export default function AdminSalesReport() {
   const [exporting,       setExporting]       = useState(false);
   const [showExportMenu,  setShowExportMenu]  = useState(false);
 
-  // Fetch store list for filter dropdown
   useEffect(() => {
     const fetchStores = async () => {
       try {
-        const token = await getToken();
-        const { data } = await axios.get('/api/admin/stores', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setAllStores(data.stores || []);
+        const res  = await fetch('/api/admin/stores', { credentials: 'include' });
+        const data = await res.json();
+        if (res.ok) setAllStores(data.stores || []);
       } catch {}
     };
     fetchStores();
@@ -159,50 +149,47 @@ export default function AdminSalesReport() {
 
   const fetchAll = useCallback(async () => {
     try {
-      const token = await getToken();
-      const headers = { Authorization: `Bearer ${token}` };
-
       setLoadingSummary(true); setLoadingTrend(true);
       setLoadingProducts(true); setLoadingStores(true);
 
       const [summaryRes, trendRes, productsRes, storesRes] = await Promise.allSettled([
-        axios.get(`/api/reports/summary?${buildQS()}`,      { headers }),
-        axios.get(`/api/reports/sales-trend?${buildQS()}`,  { headers }),
-        axios.get(`/api/reports/top-products?${buildQS()}`, { headers }),
-        axios.get(`/api/reports/top-stores?${buildQS({ sortBy: storeSort })}`, { headers }),
+        fetch(`/api/reports/summary?${buildQS()}`,      { credentials: 'include' }).then((r) => r.json()),
+        fetch(`/api/reports/sales-trend?${buildQS()}`,  { credentials: 'include' }).then((r) => r.json()),
+        fetch(`/api/reports/top-products?${buildQS()}`, { credentials: 'include' }).then((r) => r.json()),
+        fetch(`/api/reports/top-stores?${buildQS({ sortBy: storeSort })}`, { credentials: 'include' }).then((r) => r.json()),
       ]);
 
-      if (summaryRes.status  === 'fulfilled') setSummary(summaryRes.value.data.summary);
-      if (trendRes.status    === 'fulfilled') setTrend(trendRes.value.data.trend || []);
-      if (productsRes.status === 'fulfilled') setProducts(productsRes.value.data.products || []);
-      if (storesRes.status   === 'fulfilled') setTopStores(storesRes.value.data.stores || []);
-    } catch {
-      toast.error('Failed to load report data');
-    } finally {
+      if (summaryRes.status  === 'fulfilled') setSummary(summaryRes.value.summary);
+      if (trendRes.status    === 'fulfilled') setTrend(trendRes.value.trend || []);
+      if (productsRes.status === 'fulfilled') setProducts(productsRes.value.products || []);
+      if (storesRes.status   === 'fulfilled') setTopStores(storesRes.value.stores || []);
+    } catch { toast.error('Failed to load report data'); }
+    finally {
       setLoadingSummary(false); setLoadingTrend(false);
       setLoadingProducts(false); setLoadingStores(false);
     }
-  }, [getToken, buildQS, storeSort]);
+  }, [buildQS, storeSort]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const handleExport = async (format) => {
     try {
       setExporting(true); setShowExportMenu(false);
-      const token = await getToken();
+
       if (format === 'csv') {
-        const res = await axios.get(`/api/reports/export?${buildQS({ format: 'csv' })}`, {
-          headers: { Authorization: `Bearer ${token}` }, responseType: 'blob',
-        });
-        const url = URL.createObjectURL(new Blob([res.data]));
-        const a = document.createElement('a'); a.href = url;
-        a.download = `admin-sales-${period}-${Date.now()}.csv`; a.click();
-        URL.revokeObjectURL(url); toast.success('CSV downloaded');
+        const res = await fetch(`/api/reports/export?${buildQS({ format: 'csv' })}`, { credentials: 'include' });
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `admin-sales-${period}-${Date.now()}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success('CSV downloaded');
       } else {
-        const res = await axios.get(`/api/reports/export?${buildQS({ format: 'pdf' })}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const { summary: s, rows, columns } = res.data;
+        const res  = await fetch(`/api/reports/export?${buildQS({ format: 'pdf' })}`, { credentials: 'include' });
+        const data = await res.json();
+        const { summary: s, rows, columns } = data;
         const win = window.open('', '_blank');
         win.document.write(`<html><head><title>Admin Sales Report</title>
         <style>body{font-family:sans-serif;padding:24px;color:#1e293b}h1{font-size:22px}
@@ -223,8 +210,8 @@ export default function AdminSalesReport() {
           <div class="kpi"><div class="kpi-label">Orders</div><div class="kpi-value">${s.totalOrders}</div></div>
           <div class="kpi"><div class="kpi-label">AOV</div><div class="kpi-value">₹${s.aov.toLocaleString('en-IN')}</div></div>
         </div>
-        <table><thead><tr>${columns.map(c=>`<th>${c.label}</th>`).join('')}</tr></thead>
-        <tbody>${rows.slice(0,500).map(r=>`<tr>${columns.map(c=>`<td>${r[c.key]??''}</td>`).join('')}</tr>`).join('')}</tbody>
+        <table><thead><tr>${columns.map((c) => `<th>${c.label}</th>`).join('')}</tr></thead>
+        <tbody>${rows.slice(0, 500).map((r) => `<tr>${columns.map((c) => `<td>${r[c.key] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody>
         </table></body></html>`);
         win.document.close();
       }
@@ -287,32 +274,30 @@ export default function AdminSalesReport() {
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-slate-500">From</label>
                 <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
-                  className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-100" />
+                  className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none" />
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-slate-500">To</label>
                 <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
-                  className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-100" />
+                  className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none" />
               </div>
               <button onClick={fetchAll} className="mt-4 bg-green-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-green-700">Apply</button>
             </div>
           )}
 
-          {/* Store filter */}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-slate-500">Filter by Store</label>
             <select value={filterStore} onChange={(e) => setFilterStore(e.target.value)}
-              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-100 bg-white min-w-[160px]">
+              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none bg-white min-w-[160px]">
               <option value="">All Stores</option>
               {allStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
 
-          {/* Comparison */}
           <div className="flex flex-col gap-1 ml-auto">
             <label className="text-xs font-medium text-slate-500">Compare</label>
             <select value={comparison} onChange={(e) => setComparison(e.target.value)}
-              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-green-100 bg-white">
+              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm outline-none bg-white">
               {COMPARISONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
             </select>
           </div>
@@ -321,22 +306,21 @@ export default function AdminSalesReport() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard title="Total Revenue"   value={`₹${(summary?.revenue||0).toLocaleString('en-IN')}`}  sub={`${summary?.orders||0} transactions`} icon={IndianRupee} color="green"  growth={summary?.comparison?.revenue?.growth} loading={loadingSummary} />
-        <KpiCard title="Total Orders"    value={summary?.orders||0}                                    sub="in selected period"                   icon={ShoppingCart} color="blue"   growth={summary?.comparison?.orders?.growth}  loading={loadingSummary} />
-        <KpiCard title="Avg Order Value" value={`₹${(summary?.aov||0).toLocaleString('en-IN')}`}      sub="per transaction"                      icon={TrendingUp}   color="purple" loading={loadingSummary} />
-        <KpiCard title="Top Store"       value={summary?.topStore?.name || '—'}                        sub={summary?.topStore ? `₹${summary.topStore.revenue.toLocaleString('en-IN')}` : 'No data'} icon={Trophy} color="amber" loading={loadingSummary} />
-        <KpiCard title="Top Product"     value={products[0]?.name ? products[0].name.slice(0,16)+'…' : '—'} sub={products[0] ? `₹${products[0].revenue.toLocaleString('en-IN')}` : 'No data'} icon={Package} color="indigo" loading={loadingProducts} />
+        <KpiCard title="Total Revenue"   value={`₹${(summary?.revenue || 0).toLocaleString('en-IN')}`}  sub={`${summary?.orders || 0} transactions`} icon={IndianRupee} color="green"  growth={summary?.comparison?.revenue?.growth} loading={loadingSummary} />
+        <KpiCard title="Total Orders"    value={summary?.orders || 0}                                    sub="in selected period"                      icon={ShoppingCart} color="blue"   growth={summary?.comparison?.orders?.growth}  loading={loadingSummary} />
+        <KpiCard title="Avg Order Value" value={`₹${(summary?.aov || 0).toLocaleString('en-IN')}`}      sub="per transaction"                         icon={TrendingUp}   color="purple" loading={loadingSummary} />
+        <KpiCard title="Top Store"       value={summary?.topStore?.name || '—'}                          sub={summary?.topStore ? `₹${summary.topStore.revenue.toLocaleString('en-IN')}` : 'No data'} icon={Trophy} color="amber" loading={loadingSummary} />
+        <KpiCard title="Top Product"     value={products[0]?.name ? products[0].name.slice(0, 16) + '…' : '—'} sub={products[0] ? `₹${products[0].revenue.toLocaleString('en-IN')}` : 'No data'} icon={Package} color="indigo" loading={loadingProducts} />
       </div>
 
-      {/* Comparison Banners */}
       {summary?.comparison && <ComparisonBanner data={summary.comparison} />}
 
-      {/* Line / Bar Chart */}
+      {/* Trend Chart */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           <h2 className="font-semibold text-slate-800">Platform Sales Trend</h2>
           <div className="flex gap-1.5">
-            {[{ value:'line', label:'Line' }, { value:'bar', label:'Bar' }].map((t) => (
+            {[{ value: 'line', label: 'Line' }, { value: 'bar', label: 'Bar' }].map((t) => (
               <button key={t.value} onClick={() => setChartTab(t.value)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${chartTab === t.value ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                 {t.label}
@@ -353,7 +337,7 @@ export default function AdminSalesReport() {
             <LineChart data={trend} margin={{ left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v >= 1000 ? (v/1000).toFixed(1)+'k' : v}`} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v}`} />
               <Tooltip content={<ChartTooltip />} />
               <Line type="monotone" dataKey="revenue" name="revenue" stroke="#22c55e" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
             </LineChart>
@@ -363,7 +347,7 @@ export default function AdminSalesReport() {
             <BarChart data={trend} margin={{ left: -10 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v >= 1000 ? (v/1000).toFixed(1)+'k' : v}`} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v}`} />
               <Tooltip content={<ChartTooltip />} />
               <Bar dataKey="revenue" name="revenue" fill="#22c55e" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -371,12 +355,12 @@ export default function AdminSalesReport() {
         )}
       </div>
 
-      {/* Store Ranking Chart */}
+      {/* Store Ranking */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
           <h2 className="font-semibold text-slate-800 flex items-center gap-2"><Trophy size={17} className="text-amber-500" /> Top Stores Ranking</h2>
           <div className="flex gap-1.5">
-            {[{ value:'revenue', label:'By Revenue' }, { value:'orders', label:'By Orders' }].map((t) => (
+            {[{ value: 'revenue', label: 'By Revenue' }, { value: 'orders', label: 'By Orders' }].map((t) => (
               <button key={t.value} onClick={() => setStoreSort(t.value)}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${storeSort === t.value ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                 {t.label}
@@ -390,26 +374,22 @@ export default function AdminSalesReport() {
           <div className="h-56 flex items-center justify-center text-slate-400 text-sm">No store data for this period</div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Bar chart */}
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={topStores.slice(0, 8)} layout="vertical" margin={{ left: 20, right: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => storeSort === 'revenue' ? `₹${v >= 1000 ? (v/1000).toFixed(0)+'k' : v}` : v} />
+                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => storeSort === 'revenue' ? `₹${v >= 1000 ? (v / 1000).toFixed(0) + 'k' : v}` : v} />
                 <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={80} />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey={storeSort} name={storeSort} fill="#f59e0b" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
-            {/* Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">#</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Store</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Revenue</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Orders</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Share</th>
+                    {['#', 'Store', 'Revenue', 'Orders', 'Share'].map((h) => (
+                      <th key={h} className="px-3 py-2.5 text-left font-medium text-slate-500">{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -445,7 +425,7 @@ export default function AdminSalesReport() {
         )}
       </div>
 
-      {/* Bottom Row: Pie + Products */}
+      {/* Pie + Products */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl shadow-sm p-5">
           <h2 className="font-semibold text-slate-800 text-base mb-4">Revenue by Product</h2>
@@ -457,14 +437,14 @@ export default function AdminSalesReport() {
             <>
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
-                  <Pie data={products.slice(0,8)} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="revenue">
-                    {products.slice(0,8).map((_,i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  <Pie data={products.slice(0, 8)} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="revenue">
+                    {products.slice(0, 8).map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                   </Pie>
                   <Tooltip formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, 'Revenue']} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto">
-                {products.slice(0,8).map((p, i) => (
+                {products.slice(0, 8).map((p, i) => (
                   <div key={p.productId} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
@@ -492,11 +472,9 @@ export default function AdminSalesReport() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
                   <tr>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs">#</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs">Product</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs">Revenue</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs hidden sm:table-cell">Qty</th>
-                    <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs hidden sm:table-cell">Share</th>
+                    {['#', 'Product', 'Revenue', 'Qty', 'Share'].map((h) => (
+                      <th key={h} className="text-left px-5 py-3 font-medium text-slate-500 text-xs">{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -510,8 +488,8 @@ export default function AdminSalesReport() {
                         </div>
                       </td>
                       <td className="px-5 py-3.5 text-green-700 font-semibold text-xs">₹{p.revenue.toLocaleString('en-IN')}</td>
-                      <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell text-xs">{p.quantity}</td>
-                      <td className="px-5 py-3.5 hidden sm:table-cell">
+                      <td className="px-5 py-3.5 text-slate-500 text-xs">{p.quantity}</td>
+                      <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 bg-slate-100 rounded-full h-1.5 max-w-[60px]">
                             <div className="bg-green-500 h-1.5 rounded-full" style={{ width: `${Math.min(p.share, 100)}%` }} />
@@ -527,7 +505,6 @@ export default function AdminSalesReport() {
           )}
         </div>
       </div>
-
     </div>
   );
 }

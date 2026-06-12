@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\admin\AdminNavbar.jsx
 'use client'
 import { useUser, UserButton } from "@clerk/nextjs"
 import Link from "next/link"

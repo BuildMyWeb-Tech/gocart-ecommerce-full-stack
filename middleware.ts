@@ -6,17 +6,21 @@ import type { NextRequest } from 'next/server';
 export default clerkMiddleware((auth, req: NextRequest) => {
   const { pathname } = req.nextUrl;
 
-  // ── All employee routes bypass Clerk completely ─────────────
+  // Employee routes — bypass Clerk entirely
   if (
     pathname.startsWith('/employee') ||
     pathname.startsWith('/api/employee/') ||
-    pathname.startsWith('/api/auth/store-login') ||
     pathname.startsWith('/api/store/employee-auth')
   ) {
     return NextResponse.next();
   }
 
-  // Everything else uses Clerk (existing behaviour)
+  // Store login — public
+  if (pathname === '/store/login') {
+    return NextResponse.next();
+  }
+
+  // Everything else — pass through, let layouts handle auth
   return NextResponse.next();
 });
 

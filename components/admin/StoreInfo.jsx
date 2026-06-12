@@ -31,8 +31,12 @@ const StoreInfo = ({store}) => {
                 <div className="text-center sm:text-left">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                         <h3 className="text-xl font-semibold text-slate-800">{store.name}</h3>
-                        <span className="text-sm text-slate-500 font-medium">@{store.username}</span>
+                        
+                    </div>
 
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-2">
+                        
+                        <span className="text-sm text-slate-500 font-medium">@{store.username}</span>
                         {/* Status Badge */}
                         <span
                             className={`text-xs font-semibold px-3 py-1 rounded-full ${
@@ -45,16 +49,11 @@ const StoreInfo = ({store}) => {
                         >
                             {store.status}
                         </span>
+
+                        
                     </div>
-                    
-                    <div className="flex items-center justify-center sm:justify-start gap-3 mt-2">
-                        <span className="bg-blue-50 text-blue-600 text-xs px-2 py-1 rounded-full font-medium">
-                            Retail
-                        </span>
-                        <span className="bg-purple-50 text-purple-600 text-xs px-2 py-1 rounded-full font-medium">
-                            Electronics
-                        </span>
-                    </div>
+
+
                 </div>
             </div>
 

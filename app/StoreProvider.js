@@ -1,28 +1,26 @@
 // app/StoreProvider.js
 'use client';
 
-import { Provider } from 'react-redux';
-import { PersistGate } from 'redux-persist/integration/react';
+import { useRef } from 'react';
+import { Provider }     from 'react-redux';
+import { PersistGate }  from 'redux-persist/integration/react';
 import { store, persistor } from '@/lib/store';
-import { Toaster } from 'react-hot-toast';
-import { useAuth } from '@clerk/nextjs';
-import { useEffect } from 'react';
-import { useDispatch } from 'react-redux';
+import { Toaster }      from 'react-hot-toast';
+import { useAuth }      from '@clerk/nextjs';
+import { useEffect }    from 'react';
+import { useDispatch }  from 'react-redux';
 import { fetchCartThunk } from '@/lib/features/cart/cartSlice';
 
-// ─── Syncs Clerk user → DB and loads cart on sign-in ───
-// Calling GET /api/cart triggers ensureUserExists inside the route,
-// which upserts the user row — no separate webhook or syncUser needed.
+// Loads DB cart + creates user row on sign-in
 function UserBootstrapper() {
-  const { isSignedIn, getToken } = useAuth();
-  const dispatch = useDispatch();
+  const { isSignedIn } = useAuth();
+  const dispatch       = useDispatch();
+  const didLoad        = useRef(false);
 
   useEffect(() => {
-    if (!isSignedIn) return;
-    // This single call:
-    // 1. Creates the DB user row if it doesn't exist (via ensureUserExists in cart route)
-    // 2. Loads the user's saved cart into Redux state
-    dispatch(fetchCartThunk({ getToken }));
+    if (!isSignedIn || didLoad.current) return;
+    didLoad.current = true;
+    dispatch(fetchCartThunk());
   }, [isSignedIn]);
 
   return null;

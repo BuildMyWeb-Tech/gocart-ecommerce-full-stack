@@ -1,37 +1,20 @@
 // app/api/employee/list/route.js
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getAuth } from '@clerk/nextjs/server';
+import { auth } from '@clerk/nextjs/server';
 import authSeller from '@/middlewares/authSeller';
-import { verifyEmployeeToken } from '@/middlewares/authEmployee';
 
 export async function GET(request) {
   try {
-    let storeId = null;
+    const { userId } = await auth();
+    if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-    const { userId } = getAuth(request);
-    if (userId) storeId = await authSeller(userId);
-
-    if (!storeId) {
-      const emp = verifyEmployeeToken(request);
-      if (emp && emp.role === 'STORE_OWNER') storeId = emp.storeId;
-    }
-
-    if (!storeId) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
-    }
+    const storeId = await authSeller(userId);
+    if (!storeId) return NextResponse.json({ error: 'Only store owners can view employees' }, { status: 403 });
 
     const employees = await prisma.employee.findMany({
-      where: { storeId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        permissions: true,
-        isActive: true,
-        createdAt: true,
-      },
+      where:   { storeId },
+      select:  { id: true, name: true, email: true, permissions: true, isActive: true, createdAt: true, updatedAt: true },
       orderBy: { createdAt: 'desc' },
     });
 

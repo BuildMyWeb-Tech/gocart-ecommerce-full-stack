@@ -19,6 +19,7 @@ async function ensureUserExists(userId) {
   });
 }
 
+// POST /api/store/create — Create a new store (pending approval)
 export async function POST(request) {
   try {
     const { userId } = getAuth(request);
@@ -27,19 +28,22 @@ export async function POST(request) {
     await ensureUserExists(userId);
 
     const formData = await request.formData();
-    const name = formData.get('name');
+    const name        = formData.get('name');
     const description = formData.get('description');
-    const username = formData.get('username');
-    const address = formData.get('address');
-    const email = formData.get('email');
-    const contact = formData.get('contact');
-    const logoFile = formData.get('image') || formData.get('logo');
+    const username    = formData.get('username');
+    const address     = formData.get('address');
+    const email       = formData.get('email');
+    const contact     = formData.get('contact');
+    const logoFile    = formData.get('image') || formData.get('logo');
 
     if (!name || !description || !username || !address || !email || !contact || !logoFile) {
       return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
     }
 
-    const usernameTaken = await prisma.store.findUnique({ where: { username } });
+    // Username validation — lowercase, no spaces
+    const cleanUsername = username.toLowerCase().trim().replace(/\s+/g, '-');
+
+    const usernameTaken = await prisma.store.findUnique({ where: { username: cleanUsername } });
     if (usernameTaken) {
       return NextResponse.json({ error: 'Username already taken' }, { status: 400 });
     }
@@ -49,6 +53,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'You already have a store' }, { status: 400 });
     }
 
+    // Upload logo to ImageKit
     const buffer = Buffer.from(await logoFile.arrayBuffer());
     const uploadResponse = await imagekit.upload({
       file: buffer,
@@ -61,42 +66,32 @@ export async function POST(request) {
       transformation: [{ quality: 'auto' }, { format: 'webp' }, { width: '256' }],
     });
 
-    // Create store and auto-create default settings in a transaction
-    const { store: newStore } = await prisma.$transaction(async (tx) => {
+    // Create store + default commission (0%) in transaction
+    const newStore = await prisma.$transaction(async (tx) => {
       const store = await tx.store.create({
         data: {
           userId,
           name,
           description,
-          username,
+          username: cleanUsername,
           address,
           email,
           contact,
           logo,
-          status: 'pending',
+          status: 'PENDING',
           isActive: false,
         },
       });
 
-      // Auto-create default StoreSettings
-      await tx.storeSettings.create({
+      // Default commission: 0%
+      await tx.commission.create({
         data: {
           storeId: store.id,
-          storeName: store.name,
-          address: store.address,
-          taxType: 'SINGLE',
-          taxPercent: 18,
-          cgst: 9,
-          sgst: 9,
-          currency: 'INR',
-          showStoreName: true,
-          showGST: true,
-          footerMessage: 'Thank you for shopping with us!',
-          defaultLowStock: 10,
+          percentage: 0,
         },
       });
 
-      return { store };
+      return store;
     });
 
     return NextResponse.json({
@@ -109,12 +104,16 @@ export async function POST(request) {
   }
 }
 
+// GET /api/store/create — Get current user's store status
 export async function GET(request) {
   try {
     const { userId } = getAuth(request);
     if (!userId) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
-    const store = await prisma.store.findUnique({ where: { userId } });
+    const store = await prisma.store.findUnique({
+      where: { userId },
+      include: { commission: true },
+    });
 
     if (!store) return NextResponse.json({ store: null, status: null });
 
