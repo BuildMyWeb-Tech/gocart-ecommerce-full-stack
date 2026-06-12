@@ -192,7 +192,6 @@ const ChartTooltip = ({ active, payload, label }) => {
 export default function StoreSalesReport() {
   const { getToken } = useAuth();
 
-  // ✅ FIX 1: Default period is 'today' not 'month'
   const [period, setPeriod] = useState('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -469,6 +468,47 @@ export default function StoreSalesReport() {
       </div>
 
       {summary?.comparison && <ComparisonBanner data={summary.comparison} />}
+
+      {/* Employee Breakdown — Store Owner sees all employees */}
+      {summary?.employeeBreakdown && summary.employeeBreakdown.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="font-semibold text-slate-800 text-base">Employee Sales Breakdown</h2>
+            <span className="text-xs text-slate-400">{summary.employeeBreakdown.length} staff</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs">Employee</th>
+                  <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs">Bills</th>
+                  <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs">Revenue</th>
+                  <th className="text-left px-5 py-3 font-medium text-slate-500 text-xs hidden sm:table-cell">Avg/Bill</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.employeeBreakdown.map((emp) => (
+                  <tr key={emp.employeeId} className="border-t border-slate-50 hover:bg-slate-50/70">
+                    <td className="px-5 py-3.5">
+                      <div>
+                        <p className="text-slate-800 font-medium text-xs">{emp.name}</p>
+                        <p className="text-slate-400 text-xs">{emp.email}</p>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-600 text-xs">{emp.bills}</td>
+                    <td className="px-5 py-3.5 text-green-700 font-semibold text-xs">
+                      ₹{emp.revenue.toLocaleString('en-IN')}
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-500 hidden sm:table-cell text-xs">
+                      ₹{emp.bills > 0 ? Math.round(emp.revenue / emp.bills).toLocaleString('en-IN') : 0}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Sales Trend Chart */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
