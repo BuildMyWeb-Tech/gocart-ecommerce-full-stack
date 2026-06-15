@@ -9,6 +9,7 @@ import {
   Layers,
   BarChart2,
   ShoppingBag,
+  Package,
   Settings2,
 } from 'lucide-react';
 
@@ -17,7 +18,9 @@ const navLinks = [
   { label: 'Stores',       href: '/admin/stores',       icon: Store },
   { label: 'Approve',      href: '/admin/approve',      icon: CheckSquare },
   { label: 'Categories',   href: '/admin/categories',   icon: Layers },
+  { label: 'Inventory',    href: '/admin/inventory',    icon: Package },
   { label: 'Orders',       href: '/admin/orders',       icon: ShoppingBag },
+  { label: 'Coupons',      href: '/admin/coupons',      icon: BarChart2 },
   { label: 'Sales Report', href: '/admin/sales-report', icon: BarChart2 },
 ];
 

@@ -1,12 +1,13 @@
 // components/OrderItem.jsx
 'use client';
 import Image from 'next/image';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { useState } from 'react';
 import RatingModal from './RatingModal';
 import OrderStatusTracker from './OrderStatusTracker';
 import OrderTimeline from './OrderTimeline';
-import { History, ChevronDown, ChevronUp, Star } from 'lucide-react';
+import { History, ChevronDown, ChevronUp, Star, Ban, AlertTriangle } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const STATUS_LABELS = {
   PENDING:          'Pending',
@@ -30,6 +31,8 @@ const STATUS_COLORS = {
   RETURNED:         'bg-purple-100 text-purple-700',
 };
 
+const CANCELLABLE_STATUSES = new Set(['PENDING', 'CONFIRMED']);
+
 function StarRating({ value }) {
   return (
     <div className="flex gap-0.5">
@@ -40,14 +43,37 @@ function StarRating({ value }) {
   );
 }
 
-export default function OrderItem({ order }) {
+export default function OrderItem({ order, onOrderUpdated }) {
   const [ratingModal,  setRatingModal]  = useState(null);
   const [showTracker,  setShowTracker]  = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelling,    setCancelling]    = useState(false);
   const { ratings } = useSelector((state) => state.rating);
 
   const statusLabel = STATUS_LABELS[order.status] || order.status?.replace(/_/g, ' ');
   const statusColor = STATUS_COLORS[order.status] || 'bg-slate-100 text-slate-700';
+
+  const handleCancelOrder = async () => {
+    try {
+      setCancelling(true);
+      const res  = await fetch('/api/orders/status', {
+        method:      'PUT',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify({ orderId: order.id, newStatus: 'CANCELLED', note: 'Cancelled by customer' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to cancel');
+      toast.success('Order cancelled successfully');
+      setConfirmCancel(false);
+      onOrderUpdated?.();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   return (
     <>
@@ -56,7 +82,6 @@ export default function OrderItem({ order }) {
         <td className="text-left px-6 py-4">
           <div className="flex flex-col gap-5">
             {order.orderItems.map((item, i) => {
-              // Variant details from new schema
               const variant = item.variant;
               const productImage = variant?.product?.images?.[0] || item.product?.images?.[0];
               const productName  = variant?.product?.name || item.product?.name;
@@ -126,9 +151,40 @@ export default function OrderItem({ order }) {
                 {showTimeline ? 'Hide history' : `History (${order.timeline.length})`}
               </button>
             )}
+            {/* ✅ Cancel order — preserved from old modal */}
+            {CANCELLABLE_STATUSES.has(order.status) && !confirmCancel && (
+              <button onClick={() => setConfirmCancel(true)}
+                className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-700">
+                <Ban size={12} /> Cancel order
+              </button>
+            )}
           </div>
         </td>
       </tr>
+
+      {/* Cancel confirmation row */}
+      {confirmCancel && (
+        <tr><td colSpan={4} className="px-6 py-3 bg-red-50">
+          <div className="max-w-md flex items-start gap-3">
+            <AlertTriangle size={18} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-700">Cancel this order?</p>
+              <p className="text-xs text-red-500 mt-1 mb-3">This action cannot be undone.</p>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmCancel(false)}
+                  className="px-3 py-1.5 border border-slate-200 rounded-lg text-slate-700 text-xs font-medium hover:bg-white bg-white">
+                  Keep Order
+                </button>
+                <button onClick={handleCancelOrder} disabled={cancelling}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-medium disabled:opacity-60 flex items-center gap-1.5">
+                  {cancelling && <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+                  {cancelling ? 'Cancelling...' : 'Yes, Cancel'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </td></tr>
+      )}
 
       {showTracker && (
         <tr><td colSpan={4} className="px-6 py-2 bg-slate-50"><div className="max-w-xl"><OrderStatusTracker status={order.status} /></div></td></tr>
@@ -147,11 +203,16 @@ export default function OrderItem({ order }) {
             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>{statusLabel}</span>
             <span className="text-sm font-medium text-slate-800">₹{order.total.toLocaleString('en-IN')}</span>
           </div>
-          <div className="mt-2 flex justify-center">
+          <div className="mt-2 flex justify-center gap-4">
             <button onClick={() => setShowTracker(!showTracker)} className="text-xs text-blue-500 flex items-center gap-1">
               {showTracker ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
               {showTracker ? 'Hide tracker' : 'Track order'}
             </button>
+            {CANCELLABLE_STATUSES.has(order.status) && !confirmCancel && (
+              <button onClick={() => setConfirmCancel(true)} className="text-xs text-red-500 flex items-center gap-1">
+                <Ban size={12} /> Cancel
+              </button>
+            )}
           </div>
         </td>
       </tr>

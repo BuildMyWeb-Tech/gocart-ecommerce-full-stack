@@ -5,21 +5,23 @@ import toast from 'react-hot-toast';
 import Image from 'next/image';
 import {
   LayersIcon, PlusCircle, Trash2, Loader2, UploadCloud, X,
-  AlertTriangle, ImageIcon, Pencil, ChevronLeft, Upload, Globe,
+  AlertTriangle, ImageIcon, Pencil, ChevronLeft, Upload, Globe, Store,
 } from 'lucide-react';
 
 export default function AdminCategoriesPage() {
   const fileInputRef = useRef(null);
-  const [categories,   setCategories]   = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [submitting,   setSubmitting]   = useState(false);
-  const [showForm,     setShowForm]     = useState(false);
-  const [editingId,    setEditingId]    = useState(null);
-  const [form,         setForm]         = useState({ name: '', description: '' });
-  const [imageFile,    setImageFile]    = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [deleteModal,  setDeleteModal]  = useState({ open: false, id: null, name: '' });
-  const [deleting,     setDeleting]     = useState(false);
+  const [categories,    setCategories]    = useState([]);
+  const [storeCategories, setStoreCategories] = useState([]); // ✅ NEW
+  const [loading,       setLoading]       = useState(true);
+  const [storeCatLoading, setStoreCatLoading] = useState(true); // ✅ NEW
+  const [submitting,    setSubmitting]    = useState(false);
+  const [showForm,      setShowForm]      = useState(false);
+  const [editingId,     setEditingId]     = useState(null);
+  const [form,          setForm]          = useState({ name: '', description: '' });
+  const [imageFile,     setImageFile]     = useState(null);
+  const [imagePreview,  setImagePreview]  = useState(null);
+  const [deleteModal,   setDeleteModal]   = useState({ open: false, id: null, name: '' });
+  const [deleting,      setDeleting]      = useState(false);
 
   const fetchCategories = async () => {
     try {
@@ -32,7 +34,21 @@ export default function AdminCategoriesPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchCategories(); }, []);
+  // ✅ NEW — fetch ALL categories (global + every store's) via /api/categories
+  // Admin role returns where:{} → all categories including storeId-owned ones
+  const fetchStoreCategories = async () => {
+    try {
+      setStoreCatLoading(true);
+      const res  = await fetch('/api/categories', { credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load');
+      // Only show store-scoped categories here (global ones are managed above)
+      setStoreCategories((data.categories || []).filter((c) => !c.isGlobal));
+    } catch { toast.error('Failed to load store categories'); }
+    finally { setStoreCatLoading(false); }
+  };
+
+  useEffect(() => { fetchCategories(); fetchStoreCategories(); }, []);
 
   const clearImage = () => {
     if (imagePreview?.startsWith('blob:')) URL.revokeObjectURL(imagePreview);
@@ -93,7 +109,7 @@ export default function AdminCategoriesPage() {
 
   if (showForm) {
     return (
-      <div className="min-h-screen bg-slate-50 p-6">
+      <div className="px-3 sm:px-6 py-4 sm:py-6">
         <div className="max-w-2xl mx-auto bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
             <div className="flex items-center gap-2">
@@ -142,61 +158,111 @@ export default function AdminCategoriesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-800 flex items-center gap-2"><LayersIcon size={22} className="text-green-600" /> Global Categories</h1>
-            <p className="text-slate-500 text-sm mt-1">Admin creates <span className="text-purple-600 font-medium">global</span> categories visible to all stores.</p>
-          </div>
-          <button onClick={openAddForm} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm">
-            <PlusCircle size={16} /> Add Category
-          </button>
+    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+      {/* Global Categories */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-800 flex items-center gap-2"><LayersIcon size={22} className="text-green-600" /> Global Categories</h1>
+          <p className="text-slate-500 text-sm mt-1">Admin creates <span className="text-purple-600 font-medium">global</span> categories visible to all stores.</p>
         </div>
+        <button onClick={openAddForm} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm">
+          <PlusCircle size={16} /> Add Category
+        </button>
+      </div>
 
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-700">All Global Categories</h2>
-            <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{categories.length} categories</span>
-          </div>
-          {loading ? (
-            <div className="flex items-center justify-center py-16 gap-2 text-slate-400"><Loader2 size={18} className="animate-spin" /> Loading...</div>
-          ) : categories.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-slate-400"><LayersIcon size={40} className="mb-3 text-slate-300" /><p>No global categories yet</p></div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    {['Image', 'Name', 'Description', 'Products', 'Actions'].map((h) => (
-                      <th key={h} className="text-left px-5 py-3.5 font-medium text-slate-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {categories.map((cat, idx) => (
-                    <tr key={cat.id} className={`border-b border-slate-50 hover:bg-slate-50/70 ${idx === categories.length - 1 ? 'border-b-0' : ''}`}>
-                      <td className="px-5 py-4">
-                        <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100 bg-slate-50">
-                          {cat.image ? <Image src={cat.image} alt={cat.name} fill className="object-cover" /> : <div className="flex items-center justify-center h-full"><ImageIcon size={16} className="text-slate-300" /></div>}
-                        </div>
-                      </td>
-                      <td className="px-5 py-4 font-medium text-slate-800">{cat.name}</td>
-                      <td className="px-5 py-4 text-slate-500 hidden md:table-cell max-w-xs"><p className="line-clamp-2">{cat.description}</p></td>
-                      <td className="px-5 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{cat._count?.products ?? 0} products</span></td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button onClick={() => openEditForm(cat)} className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Edit"><Pencil size={15} /></button>
-                          <button onClick={() => setDeleteModal({ open: true, id: cat.id, name: cat.name })} className="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={15} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-700">All Global Categories</h2>
+          <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full">{categories.length} categories</span>
         </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-16 gap-2 text-slate-400"><Loader2 size={18} className="animate-spin" /> Loading...</div>
+        ) : categories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-400"><LayersIcon size={40} className="mb-3 text-slate-300" /><p>No global categories yet</p></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  {['Image', 'Name', 'Description', 'Products', 'Actions'].map((h) => (
+                    <th key={h} className="text-left px-3 sm:px-5 py-3.5 font-medium text-slate-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((cat, idx) => (
+                  <tr key={cat.id} className={`border-b border-slate-50 hover:bg-slate-50/70 ${idx === categories.length - 1 ? 'border-b-0' : ''}`}>
+                    <td className="px-3 sm:px-5 py-4">
+                      <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100 bg-slate-50">
+                        {cat.image ? <Image src={cat.image} alt={cat.name} fill className="object-cover" /> : <div className="flex items-center justify-center h-full"><ImageIcon size={16} className="text-slate-300" /></div>}
+                      </div>
+                    </td>
+                    <td className="px-3 sm:px-5 py-4 font-medium text-slate-800">{cat.name}</td>
+                    <td className="px-3 sm:px-5 py-4 text-slate-500 hidden md:table-cell max-w-xs"><p className="line-clamp-2">{cat.description}</p></td>
+                    <td className="px-3 sm:px-5 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{cat._count?.products ?? 0} products</span></td>
+                    <td className="px-3 sm:px-5 py-4">
+                      <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => openEditForm(cat)} className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600" title="Edit"><Pencil size={15} /></button>
+                        <button onClick={() => setDeleteModal({ open: true, id: cat.id, name: cat.name })} className="p-2 rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete"><Trash2 size={15} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ✅ NEW — Store Categories (read-only, all stores) */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-800 flex items-center gap-2"><Store size={22} className="text-blue-600" /> Store Categories</h1>
+          <p className="text-slate-500 text-sm mt-1">Categories created by individual stores. <span className="text-blue-600 font-medium">Read-only</span> — managed by each store owner.</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-slate-700">All Store Categories</h2>
+          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{storeCategories.length} categories</span>
+        </div>
+        {storeCatLoading ? (
+          <div className="flex items-center justify-center py-16 gap-2 text-slate-400"><Loader2 size={18} className="animate-spin" /> Loading...</div>
+        ) : storeCategories.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-400"><Store size={40} className="mb-3 text-slate-300" /><p>No store categories yet</p></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[640px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-100">
+                  {['Image', 'Name', 'Store', 'Description', 'Products'].map((h) => (
+                    <th key={h} className="text-left px-3 sm:px-5 py-3.5 font-medium text-slate-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {storeCategories.map((cat, idx) => (
+                  <tr key={cat.id} className={`border-b border-slate-50 hover:bg-slate-50/70 ${idx === storeCategories.length - 1 ? 'border-b-0' : ''}`}>
+                    <td className="px-3 sm:px-5 py-4">
+                      <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100 bg-slate-50">
+                        {cat.image ? <Image src={cat.image} alt={cat.name} fill className="object-cover" /> : <div className="flex items-center justify-center h-full"><ImageIcon size={16} className="text-slate-300" /></div>}
+                      </div>
+                    </td>
+                    <td className="px-3 sm:px-5 py-4 font-medium text-slate-800">{cat.name}</td>
+                    <td className="px-3 sm:px-5 py-4">
+                      <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                        <Store size={11} /> {cat.store?.name || '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 sm:px-5 py-4 text-slate-500 hidden md:table-cell max-w-xs"><p className="line-clamp-2">{cat.description}</p></td>
+                    <td className="px-3 sm:px-5 py-4"><span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{cat._count?.products ?? 0} products</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {deleteModal.open && (

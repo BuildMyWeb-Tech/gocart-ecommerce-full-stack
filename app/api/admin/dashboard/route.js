@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma';
 import authAdmin from '@/middlewares/authAdmin';
 import { getAdminUserId } from '@/lib/getAdminUserId';
 import { NextResponse } from 'next/server';
-import { round2, EXCLUDED_STATUSES } from '@/lib/reportUtils';
+import { round2, EXCLUDED_STATUSES, toISTDateKey } from '@/lib/reportUtils';
 
 export async function GET(request) {
   try {
@@ -19,7 +19,7 @@ export async function GET(request) {
       revenueAgg, todayRevenueAgg,
       pendingOrders, confirmedOrders, packedOrders, shippedOrders,
       outForDeliveryOrders, deliveredOrders, cancelledOrders, returnedOrders,
-      topStoresRaw, recentOrders, lowStockVariants, last30DaysOrders,
+      topStoresRaw, recentOrders, lowStockVariants, last90DaysOrders,
     ] = await Promise.all([
       prisma.order.count(),
       prisma.store.count(),
@@ -82,12 +82,13 @@ export async function GET(request) {
         take: 20,
       }),
 
+      // ✅ Widened from 30 → 90 days, no status filter (counts ALL orders
+      // placed; revenue per-day still excludes CANCELLED/RETURNED below)
       prisma.order.findMany({
         where: {
-          createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-          status: { notIn: EXCLUDED_STATUSES },
+          createdAt: { gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
         },
-        select: { total: true, commissionAmt: true, createdAt: true },
+        select: { total: true, commissionAmt: true, createdAt: true, status: true },
         orderBy: { createdAt: 'asc' },
       }),
     ]);
@@ -110,14 +111,19 @@ export async function GET(request) {
       };
     });
 
-    // Daily chart data
+    // ✅ Daily chart data — 90 days, IST-aligned bucketing (matches
+    // toISTDateKey used elsewhere in the reporting system).
+    // Every order counts toward "orders placed"; revenue/commission
+    // exclude CANCELLED/RETURNED per EXCLUDED_STATUSES.
     const buckets = {};
-    for (const o of last30DaysOrders) {
-      const key = o.createdAt.toISOString().split('T')[0];
+    for (const o of last90DaysOrders) {
+      const key = toISTDateKey(o.createdAt);
       if (!buckets[key]) buckets[key] = { revenue: 0, commission: 0, count: 0 };
-      buckets[key].revenue    += o.total;
-      buckets[key].commission += o.commissionAmt;
-      buckets[key].count      += 1;
+      buckets[key].count += 1;
+      if (!EXCLUDED_STATUSES.includes(o.status)) {
+        buckets[key].revenue    += o.total;
+        buckets[key].commission += o.commissionAmt;
+      }
     }
     const dailyData = Object.entries(buckets).map(([date, data]) => ({
       date,

@@ -22,15 +22,23 @@ const OrderSummary = ({ totalPrice, items, appliedCoupon = null, discount = 0 })
   const [paymentMethod,     setPaymentMethod]     = useState('COD');
   const [selectedAddress,   setSelectedAddress]   = useState(null);
   const [showAddressModal,  setShowAddressModal]  = useState(false);
+  const [placing,           setPlacing]           = useState(false);
 
-  const handlePlaceOrder = async (e) => {
-    e.preventDefault();
+  const handlePlaceOrder = async () => {
+    // ✅ Validation — single toast each, function returns immediately, no toast.promise to double-fire
+    if (!user) {
+      toast.error('Please login to place an order');
+      return;
+    }
+    if (!selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    if (!items || items.length === 0) {
+      toast.error('Your cart is empty');
+      return;
+    }
 
-    if (!user)            { toast.error('Please login to place an order'); return; }
-    if (!selectedAddress) { toast.error('Please select a delivery address'); return; }
-    if (!items || items.length === 0) { toast.error('Your cart is empty'); return; }
-
-    // Build items payload — use variantId as the key
     const orderItems = items.map((item) => ({
       variantId: item.variantId,
       quantity:  item.quantity,
@@ -46,23 +54,34 @@ const OrderSummary = ({ totalPrice, items, appliedCoupon = null, discount = 0 })
 
     if (appliedCoupon) orderData.couponCode = appliedCoupon.code;
 
-    // No Bearer token — use credentials:include
-    const res  = await fetch('/api/orders', {
-      method:      'POST',
-      credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body:        JSON.stringify(orderData),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to place order');
+    setPlacing(true);
+    try {
+      const res  = await fetch('/api/orders', {
+        method:      'POST',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify(orderData),
+      });
+      const data = await res.json();
 
-    if (paymentMethod === 'STRIPE') {
-      window.location.href = data.session.url;
-    } else {
-      toast.success(data.message);
-      dispatch(clearCart());
-      dispatch(fetchCartThunk());
-      router.push('/orders');
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to place order');
+        return;
+      }
+
+      if (paymentMethod === 'STRIPE') {
+        dispatch(clearCart());
+        toast.success('Redirecting to payment...');
+        window.location.href = data.session.url;
+      } else {
+        dispatch(clearCart());
+        toast.success(data.message || 'Order placed!');
+        router.push('/orders');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Network error — please try again');
+    } finally {
+      setPlacing(false);
     }
   };
 
@@ -188,16 +207,12 @@ const OrderSummary = ({ totalPrice, items, appliedCoupon = null, discount = 0 })
           </div>
 
           <button
-            onClick={(e) =>
-              toast.promise(handlePlaceOrder(e), {
-                loading: 'Placing Order...',
-                success: (d) => d?.message || 'Order placed!',
-                error:   (e) => e.message,
-              })
-            }
-            className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-all font-medium shadow-sm"
+            onClick={handlePlaceOrder}
+            disabled={placing}
+            className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 transition-all font-medium shadow-sm disabled:opacity-60 flex items-center justify-center gap-2"
           >
-            Place Order
+            {placing && <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {placing ? 'Placing Order...' : 'Place Order'}
           </button>
 
           <div className="flex items-center justify-center gap-4 mt-4 pt-4 border-t border-slate-100">

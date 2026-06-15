@@ -138,6 +138,11 @@ export async function POST(request) {
     const commissionMap = {};
     commissions.forEach((c) => { commissionMap[c.storeId] = c.percentage; });
 
+    // ✅ Collect variantIds being purchased so we can remove only those
+    // from the user's cart (in case the cart had items from a different
+    // session/device that weren't part of this order)
+    const purchasedVariantIds = new Set(items.map((i) => i.variantId));
+
     // Create orders in transaction
     const createdOrders = await prisma.$transaction(async (tx) => {
       const orders = [];
@@ -188,6 +193,21 @@ export async function POST(request) {
         orders.push(order);
       }
 
+      // ✅ Clear purchased items from the user's server-side cart.
+      // Read the current cart, drop any variant that was just ordered,
+      // and persist the remainder (handles partial-cart checkouts safely
+      // and avoids the items reappearing via fetchCartThunk after order).
+      const currentUser = await tx.user.findUnique({ where: { id: userId }, select: { cart: true } });
+      const currentCart = Array.isArray(currentUser?.cart) ? currentUser.cart : [];
+      const remainingCart = currentCart.filter(
+        (cartItem) => !purchasedVariantIds.has(cartItem.variantId)
+      );
+
+      await tx.user.update({
+        where: { id: userId },
+        data:  { cart: remainingCart },
+      });
+
       return orders;
     });
 
@@ -209,12 +229,22 @@ export async function POST(request) {
         };
       });
 
+      // ✅ Build a guaranteed-https base URL (fixes "Invalid URL: explicit scheme required")
+      let baseUrl = process.env.NEXT_PUBLIC_APP_URL || '';
+      if (!baseUrl) {
+        const host = request.headers.get('host');
+        baseUrl = `https://${host}`;
+      } else if (!/^https?:\/\//i.test(baseUrl)) {
+        baseUrl = `https://${baseUrl}`;
+      }
+      baseUrl = baseUrl.replace(/\/+$/, ''); // strip trailing slash
+
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         line_items:   lineItems,
         mode:         'payment',
-        success_url:  `${process.env.NEXT_PUBLIC_APP_URL}/orders`,
-        cancel_url:   `${process.env.NEXT_PUBLIC_APP_URL}/cart`,
+        success_url:  `${baseUrl}/orders?payment=success`,
+        cancel_url:   `${baseUrl}/cart?payment=cancelled`,
         metadata:     { orderIds: createdOrders.map((o) => o.id).join(',') },
       });
 

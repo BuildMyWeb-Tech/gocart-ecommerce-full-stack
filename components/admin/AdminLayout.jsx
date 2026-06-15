@@ -1,7 +1,5 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\admin\AdminLayout.jsx
 // components/admin/AdminLayout.jsx
-// This is now ONLY the UI shell (navbar + sidebar + content area).
-// Auth checking has moved to app/admin/layout.jsx (server component).
+
 'use client';
 import { useEffect, useState } from 'react';
 import AdminNavbar from './AdminNavbar';
@@ -10,7 +8,6 @@ import AdminSidebar from './AdminSidebar';
 const AdminLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Close sidebar on outside click (mobile)
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (
@@ -42,8 +39,9 @@ const AdminLayout = ({ children }) => {
         >
           <AdminSidebar setSidebarOpen={setSidebarOpen} />
         </div>
-        <div className="flex-1 h-full p-4 md:p-6 lg:p-8 overflow-y-auto">
-          <div className="max-w-7xl mx-auto">{children}</div>
+        {/* ✅ Removed p-4/md:p-6/lg:p-8 and max-w-7xl mx-auto — pages control their own spacing now */}
+        <div className="flex-1 h-full overflow-y-auto">
+          {children}
         </div>
       </div>
     </div>

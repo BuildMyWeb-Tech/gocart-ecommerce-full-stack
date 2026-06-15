@@ -1,6 +1,6 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\RatingModal.jsx
+// components/RatingModal.jsx
 'use client';
-import { Star, XIcon } from 'lucide-react';
+import { Star, XIcon, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { useDispatch } from 'react-redux';
@@ -8,8 +8,9 @@ import { addRating } from '@/lib/features/rating/ratingSlice';
 
 const RatingModal = ({ ratingModal, setRatingModal }) => {
   const dispatch = useDispatch();
-  const [rating, setRating] = useState(0);
-  const [review, setReview] = useState('');
+  const [rating,     setRating]     = useState(0);
+  const [review,     setReview]     = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     if (rating < 1 || rating > 5) {
@@ -21,23 +22,38 @@ const RatingModal = ({ ratingModal, setRatingModal }) => {
       return;
     }
 
-    const res  = await fetch('/api/rating', {
-      method:      'POST',
-      credentials: 'include',
-      headers:     { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        productId: ratingModal.productId,
-        orderId:   ratingModal.orderId,
-        rating,
-        review:    review.trim(),
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to submit review');
+    setSubmitting(true);
+    try {
+      const res  = await fetch('/api/rating', {
+        method:      'POST',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: ratingModal.productId,
+          orderId:   ratingModal.orderId,
+          rating,
+          review:    review.trim(),
+        }),
+      });
 
-    dispatch(addRating(data.rating));
-    toast.success(data.message);
-    setRatingModal(null);
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to submit review');
+        return; // ✅ stop here — modal stays open, button re-enables
+      }
+
+      if (data.rating) {
+        dispatch(addRating(data.rating));
+      }
+
+      toast.success(data.message || 'Review submitted!');
+      setRatingModal(null);
+    } catch (err) {
+      toast.error(err.message || 'Network error — please try again');
+    } finally {
+      setSubmitting(false); // ✅ ALWAYS resets, no permanent "Submitting..."
+    }
   };
 
   return (
@@ -46,6 +62,7 @@ const RatingModal = ({ ratingModal, setRatingModal }) => {
         <button
           onClick={() => setRatingModal(null)}
           className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+          disabled={submitting}
         >
           <XIcon size={20} />
         </button>
@@ -59,31 +76,28 @@ const RatingModal = ({ ratingModal, setRatingModal }) => {
               key={i}
               className={`size-8 cursor-pointer transition-colors ${
                 rating > i ? 'text-green-400 fill-current' : 'text-gray-300'
-              }`}
-              onClick={() => setRating(i + 1)}
+              } ${submitting ? 'pointer-events-none opacity-60' : ''}`}
+              onClick={() => !submitting && setRating(i + 1)}
             />
           ))}
         </div>
 
         <textarea
-          className="w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
+          className="w-full p-2 border border-gray-300 rounded-md mb-4 focus:outline-none focus:ring-2 focus:ring-green-400 resize-none disabled:bg-slate-50 disabled:text-slate-400"
           placeholder="Write your review (min 5 characters)"
           rows={4}
           value={review}
           onChange={(e) => setReview(e.target.value)}
+          disabled={submitting}
         />
 
         <button
-          onClick={() =>
-            toast.promise(handleSubmit(), {
-              loading: 'Submitting...',
-              success: 'Review submitted!',
-              error:   (e) => e.message,
-            })
-          }
-          className="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded-md transition font-medium"
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded-md transition font-medium disabled:opacity-60 flex items-center justify-center gap-2"
         >
-          Submit Rating
+          {submitting && <Loader2 size={16} className="animate-spin" />}
+          {submitting ? 'Submitting...' : 'Submit Rating'}
         </button>
       </div>
     </div>

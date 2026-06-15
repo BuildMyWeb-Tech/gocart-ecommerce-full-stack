@@ -30,7 +30,9 @@ const ADMIN_TRANSITIONS = {
 
 // Customer can cancel only before PACKED
 const CUSTOMER_CANCELLABLE = new Set(['PENDING', 'CONFIRMED']);
-const PRE_SHIPPED           = new Set(['PENDING', 'CONFIRMED', 'PACKED']);
+// ✅ Customer can request return only when DELIVERED
+const CUSTOMER_RETURNABLE  = new Set(['DELIVERED']);
+const PRE_SHIPPED          = new Set(['PENDING', 'CONFIRMED', 'PACKED']);
 
 async function restoreInventory(tx, orderId) {
   const order = await tx.order.findUnique({
@@ -86,14 +88,20 @@ export async function PUT(request) {
     });
     if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
 
-    // Customer: can only cancel their own orders before PACKED
+    // ✅ Customer: can cancel before PACKED, or request return when DELIVERED
     if (isCustomer) {
       if (order.userId !== userId)
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-      if (newStatus !== 'CANCELLED')
-        return NextResponse.json({ error: 'Customers can only cancel orders' }, { status: 400 });
-      if (!CUSTOMER_CANCELLABLE.has(order.status))
-        return NextResponse.json({ error: 'Order cannot be cancelled at this stage' }, { status: 400 });
+
+      if (newStatus === 'CANCELLED') {
+        if (!CUSTOMER_CANCELLABLE.has(order.status))
+          return NextResponse.json({ error: 'Order cannot be cancelled at this stage' }, { status: 400 });
+      } else if (newStatus === 'RETURNED') {
+        if (!CUSTOMER_RETURNABLE.has(order.status))
+          return NextResponse.json({ error: 'Only delivered orders can be returned' }, { status: 400 });
+      } else {
+        return NextResponse.json({ error: 'Customers can only cancel or return orders' }, { status: 400 });
+      }
     }
 
     if (role === 'STORE' && !isCustomer && order.storeId !== storeId)

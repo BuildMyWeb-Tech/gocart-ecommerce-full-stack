@@ -16,13 +16,11 @@ export default function EmployeeLayout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
-    // Login page — no auth check needed
     if (pathname === '/employee/login') {
       setLoading(false);
       return;
     }
 
-    // Keys match what employee/login route stores
     const token   = localStorage.getItem('employeeToken');
     const empData = localStorage.getItem('employeeData');
 
@@ -54,7 +52,6 @@ export default function EmployeeLayout({ children }) {
       });
   }, [pathname]);
 
-  // Login page — render without layout wrapper
   if (pathname === '/employee/login') {
     return <>{children}</>;
   }
@@ -77,8 +74,9 @@ export default function EmployeeLayout({ children }) {
         <div className={`fixed md:relative md:flex h-full z-50 transition-transform duration-300 ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
           <EmployeeSidebar storeInfo={storeInfo} employee={employee} closeMobileMenu={() => setMobileOpen(false)} />
         </div>
+        {/* ✅ Removed p-5 / lg:pl-12 / lg:pt-12 */}
         <div className="flex-1 h-full overflow-y-auto bg-slate-50">
-          <div className="p-5 lg:pl-12 lg:pt-12">{children}</div>
+          {children}
           <div className="pb-4 text-center text-xs text-slate-400">
             <p>© {new Date().getFullYear()} {storeInfo?.name} • Employee Portal</p>
           </div>

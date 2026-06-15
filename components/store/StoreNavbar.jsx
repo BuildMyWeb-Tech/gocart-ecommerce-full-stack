@@ -49,12 +49,12 @@ const StoreNavbar = ({ storeInfo, mobileMenuOpen, setMobileMenuOpen, employee })
 
       {/* Right */}
       <div className="flex items-center gap-3 sm:gap-5">
-        <button
+        {/* <button
           onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
           className="p-1.5 rounded-full hover:bg-slate-100 text-slate-600 transition-colors"
         >
           {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-        </button>
+        </button> */}
 
         <div className="flex items-center gap-2.5">
           {/* Name + role */}

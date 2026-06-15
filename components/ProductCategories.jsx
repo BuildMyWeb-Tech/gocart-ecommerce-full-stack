@@ -1,41 +1,65 @@
 // components/ProductCategories.jsx
-// FIXED: Fetches ALL categories (Admin + Store) for the user page
 'use client';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import Title from './Title';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { ChevronRight, ChevronLeft, ShoppingBag, Loader2 } from 'lucide-react';
+import { ChevronRight, ChevronLeft, ShoppingBag } from 'lucide-react';
 import Link from 'next/link';
+
+const SKELETON_COUNT = 4;
 
 const ProductCategories = () => {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState(null);
-  const [windowWidth, setWindowWidth] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
   const [animateOnScroll, setAnimateOnScroll] = useState([]);
+  const [autoScroll, setAutoScroll] = useState(false);
   const carouselRef = useRef(null);
 
-  // ── FIX: Use the new /api/categories/all endpoint to get ALL categories ──
-  // Admin + Store categories both shown on the user page
+  // ── ✅ Faster load: cache in sessionStorage, render skeleton immediately ──
   useEffect(() => {
+    const cached = typeof window !== 'undefined' ? sessionStorage.getItem('categories_all_v1') : null;
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setCategories(parsed);
+        setLoading(false);
+      } catch {
+        // fall through to fetch
+      }
+    }
+
     fetch('/api/categories/all')
       .then((res) => res.json())
-      .then((data) => setCategories(data.categories || []))
-      .catch(() => setCategories([]))
+      .then((data) => {
+        const cats = data.categories || [];
+        setCategories(cats);
+        try {
+          sessionStorage.setItem('categories_all_v1', JSON.stringify(cats));
+        } catch {
+          // storage full or unavailable — ignore
+        }
+      })
+      .catch(() => setCategories((prev) => prev))
       .finally(() => setLoading(false));
   }, []);
 
-  // ── Window resize ───────────────────────────────────────────────
-  useEffect(() => {
-    setWindowWidth(window.innerWidth);
-    const handleResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  // ── Measure real content overflow to decide scroll mode ─────────
+  useLayoutEffect(() => {
+    const checkOverflow = () => {
+      const el = carouselRef.current;
+      if (!el) return;
+      setAutoScroll(el.scrollWidth > el.clientWidth + 1);
+    };
+
+    checkOverflow();
+    window.addEventListener('resize', checkOverflow);
+    return () => window.removeEventListener('resize', checkOverflow);
+  }, [categories, loading]);
 
   // ── Intersection observer for scroll animations ─────────────────
   useEffect(() => {
@@ -53,16 +77,6 @@ const ProductCategories = () => {
     document.querySelectorAll('.category-card').forEach((card) => observer.observe(card));
     return () => observer.disconnect();
   }, [categories]);
-
-  const shouldAutoScroll = () => {
-    if (!windowWidth || categories.length <= 3) return false;
-    if (windowWidth < 640 && categories.length > 2) return true;
-    if (windowWidth >= 640 && windowWidth < 1024 && categories.length > 3) return true;
-    if (windowWidth >= 1024 && categories.length > 5) return true;
-    return false;
-  };
-
-  const autoScroll = shouldAutoScroll();
 
   const handleMouseDown = (e) => {
     setIsDragging(true);
@@ -120,7 +134,7 @@ const ProductCategories = () => {
           <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-green-100 blur-3xl translate-x-1/3 translate-y-1/3" />
         </div>
 
-        {/* Header */}
+        {/* Header — always renders immediately, no loading dependency */}
         <div className="text-center max-w-3xl mx-auto relative z-10 mb-5">
           <span className="inline-block px-3 py-1 bg-green-50 text-green-700 text-sm font-semibold rounded-full mb-3 border border-green-100">
             BROWSE CATEGORIES
@@ -134,11 +148,16 @@ const ProductCategories = () => {
           <div className="w-20 h-1 bg-gradient-to-r from-green-500 to-green-500 mx-auto mt-5 rounded-full" />
         </div>
 
-        {/* Loading state */}
-        {loading ? (
-          <div className="flex items-center justify-center py-16 gap-2 text-slate-400">
-            <Loader2 size={20} className="animate-spin" />
-            <span className="text-sm">Loading categories...</span>
+        {/* ✅ Skeleton row — renders instantly while fetch is in flight, same layout as real cards */}
+        {loading && categories.length === 0 ? (
+          <div className="flex space-x-6 overflow-x-auto scrollbar-none py-4" style={{ scrollbarWidth: 'none' }}>
+            {Array(SKELETON_COUNT).fill(0).map((_, i) => (
+              <div key={i} className="flex-shrink-0 flex flex-col items-center" style={{ width: '180px' }}>
+                <div className="rounded-full bg-slate-200 animate-pulse mb-4" style={{ width: '180px', height: '180px' }} />
+                <div className="h-4 w-24 bg-slate-200 rounded animate-pulse mb-2" />
+                <div className="h-3 w-32 bg-slate-100 rounded animate-pulse hidden sm:block" />
+              </div>
+            ))}
           </div>
         ) : categories.length === 0 ? (
           <div className="text-center py-16 text-slate-400">
@@ -156,10 +175,11 @@ const ProductCategories = () => {
               </button>
             )}
 
+            {/* ✅ Always flex-nowrap + overflow-x-auto on mobile — never wraps vertically */}
             <div
               ref={carouselRef}
-              className={`flex space-x-6 relative z-10 overflow-x-auto scrollbar-none scroll-smooth py-4 ${
-                autoScroll ? 'cursor-grab active:cursor-grabbing' : 'justify-center flex-wrap'
+              className={`flex flex-nowrap space-x-6 relative z-10 overflow-x-auto scrollbar-none scroll-smooth py-4 ${
+                autoScroll ? 'cursor-grab active:cursor-grabbing' : 'sm:justify-center'
               }`}
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
               onMouseDown={autoScroll ? handleMouseDown : null}
@@ -193,6 +213,7 @@ const ProductCategories = () => {
                           src={category.image}
                           alt={category.name}
                           fill
+                          sizes="180px"
                           className="object-cover transition-transform duration-700 group-hover:scale-110"
                         />
                         {/* Overlay */}

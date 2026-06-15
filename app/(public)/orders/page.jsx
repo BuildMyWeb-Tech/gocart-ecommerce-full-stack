@@ -1,17 +1,20 @@
-// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\app\(public)\orders\page.jsx
+// app/(public)/orders/page.jsx
 'use client';
 import { useEffect, useState } from 'react';
 import { useUser } from '@clerk/nextjs';
+import { useDispatch, useSelector } from 'react-redux';
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import Loading from '@/components/Loading';
 import {
   ShoppingBagIcon, FilterIcon, X, MapPin, User, CreditCard,
   History, Package, CheckCircle2, Truck, ClipboardList, Ban,
-  RotateCcw, PackageCheck, Box, Navigation, Clock, AlertTriangle,
+  RotateCcw, PackageCheck, Box, Navigation, Clock, AlertTriangle, Star,
 } from 'lucide-react';
 import Link from 'next/link';
 import OrderTimeline from '@/components/OrderTimeline';
+import RatingModal from '@/components/RatingModal';
+import { fetchUserRatings } from '@/lib/features/rating/ratingSlice';
 
 const STATUS_FILTERS = [
   { key: 'all',       label: 'All Orders' },
@@ -34,6 +37,8 @@ const STATUS_CONFIG = {
 
 // Customer can cancel only at these statuses
 const CANCELLABLE_STATUSES = new Set(['PENDING', 'CONFIRMED']);
+// ✅ Customer can request return only when DELIVERED
+const RETURNABLE_STATUSES  = new Set(['DELIVERED']);
 
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.PENDING;
@@ -45,9 +50,22 @@ function StatusBadge({ status }) {
   );
 }
 
+function StarRating({ value }) {
+  return (
+    <div className="flex gap-0.5">
+      {Array(5).fill('').map((_, i) => (
+        <Star key={i} size={13} fill={value >= i + 1 ? '#fbbf24' : '#e5e7eb'} strokeWidth={0} />
+      ))}
+    </div>
+  );
+}
+
 export default function Orders() {
   const { user, isLoaded }    = useUser();
   const router                = useRouter();
+  const dispatch              = useDispatch();
+  const { ratings }           = useSelector((state) => state.rating);
+
   const [orders,       setOrders]       = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [activeFilter, setActiveFilter] = useState('all');
@@ -55,6 +73,9 @@ export default function Orders() {
   const [activeTab,     setActiveTab]     = useState('details');
   const [cancelling,    setCancelling]    = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [returning,     setReturning]     = useState(false);
+  const [confirmReturn, setConfirmReturn] = useState(false);
+  const [ratingModal,   setRatingModal]   = useState(null);
 
   const fetchOrders = async () => {
     try {
@@ -62,6 +83,11 @@ export default function Orders() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load');
       setOrders(data.orders || []);
+      // Keep modal in sync with fresh data if open
+      if (selectedOrder) {
+        const fresh = (data.orders || []).find((o) => o.id === selectedOrder.id);
+        if (fresh) setSelectedOrder(fresh);
+      }
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -73,8 +99,10 @@ export default function Orders() {
     if (!isLoaded) return;
     if (!user) { router.push('/'); return; }
     fetchOrders();
+    dispatch(fetchUserRatings()); // ✅ populate ratings so "already reviewed" detection works
   }, [isLoaded, user]);
 
+  // ── Cancel order (PENDING/CONFIRMED → CANCELLED) ────────────────
   const handleCancelOrder = async (orderId) => {
     try {
       setCancelling(true);
@@ -94,6 +122,28 @@ export default function Orders() {
       toast.error(error.message);
     } finally {
       setCancelling(false);
+    }
+  };
+
+  // ── ✅ Request return (DELIVERED → RETURNED) ────────────────────
+  const handleReturnOrder = async (orderId) => {
+    try {
+      setReturning(true);
+      const res  = await fetch('/api/orders/status', {
+        method:      'PUT',
+        credentials: 'include',
+        headers:     { 'Content-Type': 'application/json' },
+        body:        JSON.stringify({ orderId, newStatus: 'RETURNED', note: 'Return requested by customer' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to request return');
+      toast.success('Return requested — the store will process it shortly');
+      setConfirmReturn(false);
+      await fetchOrders();
+    } catch (error) {
+      toast.error(error.message);
+    } finally {
+      setReturning(false);
     }
   };
 
@@ -187,7 +237,7 @@ export default function Orders() {
                   </td>
                   <td className="px-6 py-4">
                     <button
-                      onClick={() => { setSelectedOrder(order); setActiveTab('details'); setConfirmCancel(false); }}
+                      onClick={() => { setSelectedOrder(order); setActiveTab('details'); setConfirmCancel(false); setConfirmReturn(false); }}
                       className="text-xs bg-slate-800 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors"
                     >
                       View
@@ -220,6 +270,9 @@ export default function Orders() {
                 <StatusBadge status={selectedOrder.status} />
                 {CANCELLABLE_STATUSES.has(selectedOrder.status) && (
                   <span className="text-xs text-blue-200">Cancellable</span>
+                )}
+                {RETURNABLE_STATUSES.has(selectedOrder.status) && (
+                  <span className="text-xs text-blue-200">Eligible for return</span>
                 )}
               </div>
             </div>
@@ -269,25 +322,44 @@ export default function Orders() {
 
                   <h3 className="font-semibold text-slate-800 text-sm mb-3">Order Items ({selectedOrder.orderItems?.length})</h3>
                   <div className="space-y-2">
-                    {selectedOrder.orderItems?.map((item, i) => (
-                      <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
-                        {item.variant?.product?.images?.[0] && (
-                          <img src={item.variant.product.images[0]} alt="" className="w-10 h-10 rounded object-cover border border-slate-200" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{item.variant?.product?.name}</p>
-                          <div className="flex gap-1.5 mt-0.5">
-                            <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{item.variant?.color}</span>
-                            <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">{item.variant?.size}</span>
-                            <span className="text-xs text-slate-400 font-mono">{item.variant?.sku}</span>
+                    {selectedOrder.orderItems?.map((item, i) => {
+                      const productId = item.variant?.productId || item.variant?.product?.id;
+                      const existingRating = ratings.find(
+                        (r) => selectedOrder.id === r.orderId && productId === r.productId
+                      );
+                      return (
+                        <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                          {item.variant?.product?.images?.[0] && (
+                            <img src={item.variant.product.images[0]} alt="" className="w-10 h-10 rounded object-cover border border-slate-200" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{item.variant?.product?.name}</p>
+                            <div className="flex gap-1.5 mt-0.5">
+                              <span className="text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">{item.variant?.color}</span>
+                              <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold">{item.variant?.size}</span>
+                              <span className="text-xs text-slate-400 font-mono">{item.variant?.sku}</span>
+                            </div>
+                            {/* ✅ Rating UI — Write Review / show stars */}
+                            {selectedOrder.status === 'DELIVERED' && productId && (
+                              existingRating ? (
+                                <div className="mt-1.5"><StarRating value={existingRating.rating} /></div>
+                              ) : (
+                                <button
+                                  onClick={() => setRatingModal({ orderId: selectedOrder.id, productId })}
+                                  className="mt-1.5 text-green-600 hover:bg-green-50 text-xs px-2 py-1 rounded border border-green-200 w-fit"
+                                >
+                                  Write a Review
+                                </button>
+                              )
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-slate-800">₹{(item.price * item.quantity).toLocaleString('en-IN')}</p>
+                            <p className="text-xs text-slate-400">×{item.quantity}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold text-slate-800">₹{(item.price * item.quantity).toLocaleString('en-IN')}</p>
-                          <p className="text-xs text-slate-400">×{item.quantity}</p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Cancel Section */}
@@ -324,6 +396,41 @@ export default function Orders() {
                       )}
                     </div>
                   )}
+
+                  {/* ✅ Return Section — DELIVERED → RETURNED */}
+                  {RETURNABLE_STATUSES.has(selectedOrder.status) && (
+                    <div className="mt-6 border-t border-slate-100 pt-5">
+                      {!confirmReturn ? (
+                        <button
+                          onClick={() => setConfirmReturn(true)}
+                          className="flex items-center gap-2 text-sm text-purple-600 border border-purple-200 bg-purple-50 hover:bg-purple-100 px-4 py-2.5 rounded-lg transition-colors font-medium"
+                        >
+                          <RotateCcw size={15} /> Return Order
+                        </button>
+                      ) : (
+                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                          <div className="flex items-start gap-3 mb-4">
+                            <AlertTriangle size={18} className="text-purple-500 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-sm font-semibold text-purple-700">Request a return for this order?</p>
+                              <p className="text-xs text-purple-500 mt-1">The store will be notified and will process your return request.</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-3">
+                            <button onClick={() => setConfirmReturn(false)}
+                              className="flex-1 py-2 border border-slate-200 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50">
+                              Cancel
+                            </button>
+                            <button onClick={() => handleReturnOrder(selectedOrder.id)} disabled={returning}
+                              className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2">
+                              {returning ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <RotateCcw size={14} />}
+                              {returning ? 'Requesting...' : 'Yes, Request Return'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -338,6 +445,8 @@ export default function Orders() {
           </div>
         </div>
       )}
+
+      {ratingModal && <RatingModal ratingModal={ratingModal} setRatingModal={setRatingModal} />}
     </div>
   );
 }

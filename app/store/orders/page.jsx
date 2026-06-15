@@ -42,6 +42,7 @@ const PRIMARY_NEXT = {
   PACKED:    'SHIPPED',
   SHIPPED:   'OUT_FOR_DELIVERY',
   OUT_FOR_DELIVERY: 'DELIVERED',
+  DELIVERED: 'RETURNED',   // ✅ surfaces "Mark Returned" quick action
 };
 
 function StatusBadge({ status }) {

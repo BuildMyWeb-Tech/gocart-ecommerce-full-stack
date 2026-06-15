@@ -1,3 +1,4 @@
+// C:\Users\Siddharathan\Desktop\gocart-ecommerce-full-stack\components\Footer.jsx
 'use client'
 
 import Link from "next/link";
@@ -73,7 +74,7 @@ const Footer = () => {
   ];
 
   return (
-    <footer className="bg-white border-t border-slate-200  md:pb-0">
+    <footer className="bg-white border-t border-slate-200 pb-20 md:pb-0">
       {/* ↑ pb-20 fixes mobile bottom nav overlap */}
 
       <div className="max-w-7xl mx-auto px-6">

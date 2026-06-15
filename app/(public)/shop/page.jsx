@@ -2,24 +2,54 @@
 'use client';
 import { Suspense, useState, useEffect } from 'react';
 import ProductCard from '@/components/ProductCard';
-import { FilterIcon, Search, AlertCircle, ArrowUpDown, RefreshCw, CheckCircle2, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { FilterIcon, Search, AlertCircle, ArrowUpDown, RefreshCw, CheckCircle2, X, SlidersHorizontal, ChevronDown, Store } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
+import { fetchProducts } from '@/lib/features/product/productSlice';
 
 function ShopContent() {
   const searchParams = useSearchParams();
   const search       = searchParams.get('search') || '';
   const router       = useRouter();
+  const dispatch     = useDispatch();
   const products     = useSelector((state) => state.product.list);
+  const loading      = useSelector((state) => state.product.loading);
 
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [priceRange,        setPriceRange]        = useState([0, 10000]);
   const [showFilters,       setShowFilters]        = useState(false);
   const [sortBy,            setSortBy]             = useState('featured');
 
-  const categories = ['All', ...new Set(products.flatMap((p) =>
+  const [allCategoryNames, setAllCategoryNames] = useState([]);
+  const [activeStores,     setActiveStores]     = useState([]);
+  const [selectedStoreId,  setSelectedStoreId]  = useState('All');
+
+  // ✅ FIX: Re-fetch products whenever `search` param changes — including
+  // when it's cleared (empty string → fetches ALL products again).
+  useEffect(() => {
+    dispatch(fetchProducts({ search: search || undefined }));
+  }, [search, dispatch]);
+
+  useEffect(() => {
+    fetch('/api/categories/all')
+      .then((res) => res.json())
+      .then((data) => {
+        const names = (data.categories || []).map((c) => c.name);
+        setAllCategoryNames([...new Set(names)]);
+      })
+      .catch(() => setAllCategoryNames([]));
+
+    fetch('/api/stores/active')
+      .then((res) => res.json())
+      .then((data) => setActiveStores(data.stores || []))
+      .catch(() => setActiveStores([]));
+  }, []);
+
+  const productCategoryNames = [...new Set(products.flatMap((p) =>
     (p.categories || []).map((c) => c.category?.name || c.name).filter(Boolean)
   ))];
+
+  const categories = ['All', ...(allCategoryNames.length ? allCategoryNames : productCategoryNames)];
 
   const allPrices = products.flatMap((p) => (p.variants || []).map((v) => Number(v.price) || 0));
   const minP = allPrices.length ? Math.min(...allPrices) : 0;
@@ -32,13 +62,16 @@ function ShopContent() {
     return prices.length ? Math.min(...prices) : 0;
   };
 
+  // ✅ Since the API already filters by `search`, we don't need to
+  // re-filter by search client-side — but keep category/price/store
+  // filters client-side as before.
   const filteredProducts = products.filter((p) => {
-    const matchSearch   = !search || p.name.toLowerCase().includes(search.toLowerCase());
     const cats          = (p.categories || []).map((c) => c.category?.name || c.name);
     const matchCat      = selectedCategory === 'All' || cats.includes(selectedCategory);
     const mp            = getMinPrice(p);
     const matchPrice    = mp >= priceRange[0] && mp <= priceRange[1];
-    return matchSearch && matchCat && matchPrice;
+    const matchStore    = selectedStoreId === 'All' || p.storeId === selectedStoreId || p.store?.id === selectedStoreId;
+    return matchCat && matchPrice && matchStore;
   });
 
   const sortedProducts = [...filteredProducts].sort((a, b) => {
@@ -52,10 +85,11 @@ function ShopContent() {
     return 0;
   });
 
-  const hasActiveFilters = selectedCategory !== 'All' || priceRange[0] !== minP || priceRange[1] !== maxP;
+  const hasActiveFilters = selectedCategory !== 'All' || selectedStoreId !== 'All' || priceRange[0] !== minP || priceRange[1] !== maxP;
 
   const resetFilters = () => {
     setSelectedCategory('All');
+    setSelectedStoreId('All');
     setPriceRange([minP, maxP]);
     setSortBy('featured');
     if (search) router.push('/shop');
@@ -65,16 +99,17 @@ function ShopContent() {
     <div className="min-h-[70vh] max-w-7xl mx-auto px-4 sm:px-6 py-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">
             {search ? <>Results for "<span className="text-green-600">{search}</span>"</> : 'All Products'}
           </h1>
-          <p className="text-slate-500 text-sm mt-0.5">Showing {sortedProducts.length} products</p>
+          <p className="text-slate-500 text-sm mt-0.5">
+            {loading ? 'Loading...' : `Showing ${sortedProducts.length} products`}
+          </p>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Sort dropdown */}
           <div className="hidden md:flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
             <ArrowUpDown size={14} className="text-slate-400" />
             <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
@@ -87,7 +122,6 @@ function ShopContent() {
             </select>
           </div>
 
-          {/* Filter toggle */}
           <button onClick={() => setShowFilters(!showFilters)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${
               showFilters || hasActiveFilters
@@ -101,6 +135,25 @@ function ShopContent() {
         </div>
       </div>
 
+      {/* Category Tabs */}
+      {categories.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-none" style={{ scrollbarWidth: 'none' }}>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium border transition-all whitespace-nowrap ${
+                selectedCategory === cat
+                  ? 'bg-green-600 text-white border-green-600 shadow-sm'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-green-300 hover:text-green-600'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Active filters bar */}
       {hasActiveFilters && (
         <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -111,6 +164,12 @@ function ShopContent() {
               <button onClick={() => setSelectedCategory('All')}><X size={11} /></button>
             </span>
           )}
+          {selectedStoreId !== 'All' && (
+            <span className="flex items-center gap-1 bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded-full font-medium">
+              <Store size={11} /> {activeStores.find((s) => s.id === selectedStoreId)?.name || 'Store'}
+              <button onClick={() => setSelectedStoreId('All')}><X size={11} /></button>
+            </span>
+          )}
           <button onClick={resetFilters} className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 ml-1">
             <RefreshCw size={11} /> Clear all
           </button>
@@ -118,7 +177,6 @@ function ShopContent() {
       )}
 
       <div className="flex gap-6">
-        {/* Sidebar filters */}
         {showFilters && (
           <div className="w-64 flex-shrink-0">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sticky top-24">
@@ -131,7 +189,6 @@ function ShopContent() {
                 </button>
               </div>
 
-              {/* Categories */}
               <div className="mb-6">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Category</h3>
                 <div className="space-y-1.5 max-h-52 overflow-y-auto">
@@ -149,7 +206,21 @@ function ShopContent() {
                 </div>
               </div>
 
-              {/* Price Range */}
+              {activeStores.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <Store size={12} /> Store
+                  </h3>
+                  <select value={selectedStoreId} onChange={(e) => setSelectedStoreId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 text-slate-700 p-2.5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-green-100">
+                    <option value="All">All Stores</option>
+                    {activeStores.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="mb-5">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Price Range</h3>
                 <div className="flex items-center gap-2 mb-3">
@@ -168,7 +239,6 @@ function ShopContent() {
                   className="w-full accent-green-600 h-1.5 rounded-full cursor-pointer" />
               </div>
 
-              {/* Mobile sort */}
               <div className="md:hidden">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Sort By</h3>
                 <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
@@ -188,9 +258,21 @@ function ShopContent() {
           </div>
         )}
 
-        {/* Product grid */}
         <div className="flex-1 min-w-0">
-          {sortedProducts.length > 0 ? (
+          {loading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-5">
+              {Array(8).fill(0).map((_, i) => (
+                <div key={i} className="bg-white rounded-2xl border border-slate-100 overflow-hidden animate-pulse">
+                  <div className="h-40 sm:h-52 bg-slate-100" />
+                  <div className="p-3 space-y-2.5">
+                    <div className="h-3.5 bg-slate-100 rounded-full w-3/4" />
+                    <div className="h-3.5 bg-slate-100 rounded-full w-1/2" />
+                    <div className="h-10 bg-slate-100 rounded-xl mt-3" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : sortedProducts.length > 0 ? (
             <div className={`grid gap-4 md:gap-5 ${showFilters ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3' : 'grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4'}`}>
               {sortedProducts.map((product) => (
                 <ProductCard key={product.id} product={product} />

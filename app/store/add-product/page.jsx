@@ -7,16 +7,15 @@ import { useAuth } from '@clerk/nextjs';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  ShoppingBag, Tag, IndianRupee, Package, UploadCloud, X,
-  PlusCircle, Loader2, Pencil, Zap, Plus, Trash2, Layers, Hash,
-  Palette, Ruler, DollarSign,
+  ShoppingBag, Tag, Package, UploadCloud, X,
+  PlusCircle, Loader2, Pencil, Zap, Plus, Trash2, Layers,
 } from 'lucide-react';
 
-// ── Available colors and sizes ────────────────────────────────────
 const PRESET_COLORS = ['Black', 'White', 'Red', 'Blue', 'Green', 'Yellow', 'Pink', 'Grey', 'Navy', 'Brown'];
 const PRESET_SIZES  = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'Free Size'];
 
-const emptyVariant = () => ({ color: '', size: '', price: '', costPrice: '', sku: '', stock: '' });
+// ✅ Cost removed — costPrice always sent as 0
+const emptyVariant = () => ({ color: '', size: '', price: '', sku: '', stock: '' });
 
 export default function AddProductPage() {
   const { getToken } = useAuth();
@@ -49,7 +48,6 @@ export default function AddProductPage() {
     return { Authorization: `Bearer ${token}` };
   };
 
-  // Fetch categories
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -65,7 +63,6 @@ export default function AddProductPage() {
     fetchCategories();
   }, []);
 
-  // Load product for edit
   useEffect(() => {
     if (!isEdit) return;
     const fetchProduct = async () => {
@@ -91,7 +88,6 @@ export default function AddProductPage() {
             color: v.color,
             size: v.size,
             price: v.price,
-            costPrice: v.costPrice || '',
             sku: v.sku,
             stock: v.stock,
           })));
@@ -105,13 +101,11 @@ export default function AddProductPage() {
     fetchProduct();
   }, [isEdit, editId]);
 
-  // Variant helpers
   const addVariant = () => setVariants((prev) => [...prev, emptyVariant()]);
   const removeVariant = (i) => setVariants((prev) => prev.filter((_, idx) => idx !== i));
   const updateVariant = (i, field, value) =>
     setVariants((prev) => prev.map((v, idx) => (idx === i ? { ...v, [field]: value } : v)));
 
-  // Image helpers
   const handleImageChange = (e) => {
     const files = Array.from(e.target.files);
     const total = existingImages.length + imageFiles.length + files.length;
@@ -122,7 +116,6 @@ export default function AddProductPage() {
   const removeNewImage      = (i) => { setImageFiles((p) => p.filter((_, idx) => idx !== i)); setImagePreviews((p) => { URL.revokeObjectURL(p[i]); return p.filter((_, idx) => idx !== i); }); };
   const removeExistingImage = (i) => setExistingImages((p) => p.filter((_, idx) => idx !== i));
 
-  // Key feature helpers
   const addFeature    = () => setKeyFeatures((p) => [...p, '']);
   const updateFeature = (i, v) => setKeyFeatures((p) => p.map((f, idx) => (idx === i ? v : f)));
   const removeFeature = (i) => setKeyFeatures((p) => p.filter((_, idx) => idx !== i));
@@ -135,7 +128,6 @@ export default function AddProductPage() {
         : [...p.selectedCategoryIds, id],
     }));
 
-  // Validation
   const validateVariants = () => {
     if (!variants.length) { toast.error('At least one variant is required'); return false; }
     const skus = variants.map((v) => v.sku?.trim()).filter(Boolean);
@@ -172,7 +164,7 @@ export default function AddProductPage() {
       formData.append('variants',     JSON.stringify(variants.map((v) => ({
         ...v,
         price:     Number(v.price),
-        costPrice: Number(v.costPrice || 0),
+        costPrice: 0, // ✅ Cost field removed from UI — always 0
         stock:     Math.max(0, Number(v.stock || 0)),
       }))));
 
@@ -186,7 +178,6 @@ export default function AddProductPage() {
         imageFiles.forEach((f) => formData.append('images', f));
         const { data } = await axios.post('/api/store/product', formData, { headers });
         toast.success(data.message || 'Product added');
-        // Reset
         setForm({ name: '', description: '', brand: '', selectedCategoryIds: [] });
         imagePreviews.forEach((url) => URL.revokeObjectURL(url));
         setImageFiles([]);
@@ -210,16 +201,16 @@ export default function AddProductPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold text-slate-800 flex items-center gap-2">
-            {isEdit ? <><Pencil size={24} className="text-indigo-500" /> Edit Product</> : <><PlusCircle size={24} className="text-indigo-500" /> Add New Product</>}
+    <div className="min-h-screen bg-white">
+      <div className="w-full px-3 sm:px-6 py-4 sm:py-6">
+        <div className="mb-6">
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-800 flex items-center gap-2">
+            {isEdit ? <><Pencil size={22} className="text-indigo-500" /> Edit Product</> : <><PlusCircle size={22} className="text-indigo-500" /> Add New Product</>}
           </h1>
           <p className="text-slate-500 mt-1 text-sm">Fill in details, add multiple color/size variants</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
 
           {/* Images */}
           <div>
@@ -233,7 +224,7 @@ export default function AddProductPage() {
                 <div className="flex flex-wrap gap-3">
                   {existingImages.map((src, idx) => (
                     <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-200">
-                      <Image width={96} height={96} src={src} alt="" className="h-24 w-24 object-cover" />
+                      <Image width={96} height={96} src={src} alt="" className="h-20 w-20 sm:h-24 sm:w-24 object-cover" />
                       <button type="button" onClick={() => removeExistingImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <X size={12} />
                       </button>
@@ -248,7 +239,7 @@ export default function AddProductPage() {
                 <div className="flex flex-wrap gap-3">
                   {imagePreviews.map((src, idx) => (
                     <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-200">
-                      <Image width={96} height={96} src={src} alt="" className="h-24 w-24 object-cover" />
+                      <Image width={96} height={96} src={src} alt="" className="h-20 w-20 sm:h-24 sm:w-24 object-cover" />
                       <button type="button" onClick={() => removeNewImage(idx)} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <X size={12} />
                       </button>
@@ -257,8 +248,8 @@ export default function AddProductPage() {
                 </div>
               </div>
             )}
-            <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg p-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all">
-              <UploadCloud size={28} className="text-slate-400 mb-2" />
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-lg p-5 sm:p-6 cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/30 transition-all">
+              <UploadCloud size={26} className="text-slate-400 mb-2" />
               <span className="text-sm text-slate-500">Click to upload images</span>
               <span className="text-xs text-slate-400 mt-1">PNG, JPG, WEBP (max 10 total)</span>
               <input type="file" accept="image/*" multiple onChange={handleImageChange} className="hidden" />
@@ -288,69 +279,85 @@ export default function AddProductPage() {
             <div className="flex items-center justify-between mb-3">
               <p className="font-medium text-slate-700 flex items-center gap-2">
                 <Layers size={16} className="text-indigo-500" /> Variants
-                <span className="text-xs text-slate-400">(color + size + price + cost + SKU + stock)</span>
+                <span className="text-xs text-slate-400 hidden sm:inline">(color + size + price + SKU + stock)</span>
               </p>
               <button type="button" onClick={addVariant} className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-100">
                 <Plus size={14} /> Add Variant
               </button>
             </div>
 
+            {/* ✅ Desktop: grid table. Mobile: stacked cards */}
             <div className="space-y-3">
-              {/* Header */}
-              <div className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_32px] gap-2 px-1">
-                {['Color', 'Size', 'Price (₹)', 'Cost (₹)', 'SKU', 'Stock', ''].map((h) => (
+              {/* Desktop header row — hidden on mobile */}
+              <div className="hidden sm:grid grid-cols-[1fr_1fr_1fr_1fr_1fr_32px] gap-2 px-1">
+                {['Color', 'Size', 'Price (₹)', 'SKU', 'Stock', ''].map((h) => (
                   <span key={h} className="text-xs font-semibold text-slate-500 uppercase">{h}</span>
                 ))}
               </div>
 
               {variants.map((v, i) => (
-                <div key={i} className="grid grid-cols-[1fr_1fr_1fr_1fr_1fr_1fr_32px] gap-2 items-center bg-indigo-50/40 border border-indigo-100 rounded-lg p-3">
-                  {/* Color */}
-                  <div>
-                    <input
-                      type="text"
-                      list={`colors-${i}`}
-                      placeholder="Black"
-                      value={v.color}
-                      onChange={(e) => updateVariant(i, 'color', e.target.value)}
-                      className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white"
-                    />
-                    <datalist id={`colors-${i}`}>
-                      {PRESET_COLORS.map((c) => <option key={c} value={c} />)}
-                    </datalist>
+                <div key={i} className="bg-indigo-50/40 border border-indigo-100 rounded-lg p-3">
+                  {/* Mobile: labeled stacked fields */}
+                  <div className="flex sm:hidden items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-indigo-600">Variant {i + 1}</span>
+                    <button type="button" onClick={() => removeVariant(i)} disabled={variants.length === 1}
+                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  {/* Size */}
-                  <div>
-                    <input
-                      type="text"
-                      list={`sizes-${i}`}
-                      placeholder="M"
-                      value={v.size}
-                      onChange={(e) => updateVariant(i, 'size', e.target.value)}
-                      className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white"
-                    />
-                    <datalist id={`sizes-${i}`}>
-                      {PRESET_SIZES.map((s) => <option key={s} value={s} />)}
-                    </datalist>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_1fr_1fr_1fr_32px] gap-2 items-end sm:items-center">
+                    {/* Color */}
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase sm:hidden">Color</label>
+                      <input
+                        type="text"
+                        list={`colors-${i}`}
+                        placeholder="Black"
+                        value={v.color}
+                        onChange={(e) => updateVariant(i, 'color', e.target.value)}
+                        className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white"
+                      />
+                      <datalist id={`colors-${i}`}>
+                        {PRESET_COLORS.map((c) => <option key={c} value={c} />)}
+                      </datalist>
+                    </div>
+                    {/* Size */}
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase sm:hidden">Size</label>
+                      <input
+                        type="text"
+                        list={`sizes-${i}`}
+                        placeholder="M"
+                        value={v.size}
+                        onChange={(e) => updateVariant(i, 'size', e.target.value)}
+                        className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white"
+                      />
+                      <datalist id={`sizes-${i}`}>
+                        {PRESET_SIZES.map((s) => <option key={s} value={s} />)}
+                      </datalist>
+                    </div>
+                    {/* Price */}
+                    <div className="relative">
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase sm:hidden">Price (₹)</label>
+                      {/* <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm sm:top-[60%]">₹</span> */}
+                      <input type="number" placeholder="499" min="0" value={v.price} onChange={(e) => updateVariant(i, 'price', e.target.value)} className="w-full pl-6 pr-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white" />
+                    </div>
+                    {/* SKU */}
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase sm:hidden">SKU</label>
+                      <input type="text" placeholder="BLK-M-001" value={v.sku} onChange={(e) => updateVariant(i, 'sku', e.target.value)} className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white font-mono" />
+                    </div>
+                    {/* Stock */}
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase sm:hidden">Stock</label>
+                      <input type="number" placeholder="0" min="0" value={v.stock} onChange={(e) => updateVariant(i, 'stock', e.target.value)} className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white" />
+                    </div>
+                    {/* Remove — desktop only (mobile has it in header) */}
+                    <button type="button" onClick={() => removeVariant(i)} disabled={variants.length === 1} className="hidden sm:flex p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed items-center justify-center">
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  {/* Price */}
-                  <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
-                    <input type="number" placeholder="499" min="0" value={v.price} onChange={(e) => updateVariant(i, 'price', e.target.value)} className="w-full pl-6 pr-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white" />
-                  </div>
-                  {/* Cost */}
-                  <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₹</span>
-                    <input type="number" placeholder="250" min="0" value={v.costPrice} onChange={(e) => updateVariant(i, 'costPrice', e.target.value)} className="w-full pl-6 pr-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white" />
-                  </div>
-                  {/* SKU */}
-                  <input type="text" placeholder="BLK-M-001" value={v.sku} onChange={(e) => updateVariant(i, 'sku', e.target.value)} className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white font-mono" />
-                  {/* Stock */}
-                  <input type="number" placeholder="0" min="0" value={v.stock} onChange={(e) => updateVariant(i, 'stock', e.target.value)} className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100 bg-white" />
-                  {/* Remove */}
-                  <button type="button" onClick={() => removeVariant(i)} disabled={variants.length === 1} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                    <Trash2 size={14} />
-                  </button>
                 </div>
               ))}
             </div>
@@ -409,13 +416,13 @@ export default function AddProductPage() {
           </div>
 
           {/* Submit */}
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-2 pb-6">
             {isEdit && (
-              <button type="button" onClick={() => router.push('/store/manage-product')} className="px-6 py-3 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-all">
+              <button type="button" onClick={() => router.push('/store/manage-product')} className="w-full sm:w-auto px-6 py-3 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-all">
                 Cancel
               </button>
             )}
-            <button type="submit" disabled={loading} className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-60">
+            <button type="submit" disabled={loading} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-60">
               {loading ? (
                 <><Loader2 size={18} className="animate-spin" /> {isEdit ? 'Saving...' : 'Adding...'}</>
               ) : isEdit ? (

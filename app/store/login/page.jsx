@@ -1,18 +1,29 @@
 // app/store/login/page.jsx
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@clerk/nextjs';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { LogIn, Mail, Lock, Eye, EyeOff, Store, Users, ArrowLeft } from 'lucide-react';
+import { LogIn, Mail, Lock, Eye, EyeOff, Store, Users, ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function StoreLoginPage() {
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [loginType, setLoginType] = useState('owner'); // 'owner' | 'employee'
+  const [loginType, setLoginType] = useState('employee'); // ✅ default to employee since owners redirect away
+
+  // ✅ FIX: If already signed in via Clerk (store owner), skip this page
+  // entirely and go straight to the dashboard — StoreLayout will
+  // verify seller status from there.
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      router.replace('/store');
+    }
+  }, [isLoaded, isSignedIn, router]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -22,7 +33,6 @@ export default function StoreLoginPage() {
       setLoading(true);
 
       if (loginType === 'employee') {
-        // Employee JWT login
         const { data } = await axios.post('/api/employee/login', form);
         localStorage.setItem('employeeToken', data.token);
         localStorage.setItem('employeeData',  JSON.stringify(data.employee));
@@ -30,8 +40,6 @@ export default function StoreLoginPage() {
         toast.success(`Welcome, ${data.employee.name}!`);
         router.push('/employee/dashboard');
       } else {
-        // Store owner — this page is only needed if they lose their Clerk session.
-        // For owners, redirect to sign-in which will then redirect back to /store.
         toast('Store owners sign in via Clerk. Redirecting...', { icon: 'ℹ️' });
         router.push('/sign-in?redirect_url=/store');
       }
@@ -42,10 +50,19 @@ export default function StoreLoginPage() {
     }
   };
 
+  // ✅ Don't flash the chooser UI while Clerk auth status is loading
+  // or while we're redirecting an already-signed-in owner away.
+  if (!isLoaded || isSignedIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-slate-400" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-green-50/30 to-slate-100 px-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center text-4xl font-bold text-slate-800">
             <span className="text-green-600">King</span>cart
@@ -55,7 +72,6 @@ export default function StoreLoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8">
-          {/* Login type toggle */}
           <div className="flex rounded-xl overflow-hidden border border-slate-200 mb-6">
             <button
               type="button"
@@ -72,7 +88,6 @@ export default function StoreLoginPage() {
           </div>
 
           {loginType === 'owner' ? (
-            /* Store owner — use Clerk */
             <div className="text-center py-4">
               <div className="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
                 <Store size={26} className="text-green-600" />
@@ -89,7 +104,6 @@ export default function StoreLoginPage() {
               </p>
             </div>
           ) : (
-            /* Employee — JWT login */
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="text-center mb-4">
                 <div className="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto mb-2">

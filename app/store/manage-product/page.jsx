@@ -83,7 +83,7 @@ function ProductRow({ product, onDelete, onVariantUpdate }) {
   return (
     <>
       <tr className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
-        <td className="px-5 py-4">
+        <td className="px-3 sm:px-5 py-3 sm:py-4">
           <div className="flex items-center gap-3">
             {product.images?.[0] && (
               <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100 flex-shrink-0">
@@ -91,28 +91,28 @@ function ProductRow({ product, onDelete, onVariantUpdate }) {
               </div>
             )}
             <div>
-              <span className="font-medium text-slate-800 line-clamp-1 max-w-[140px] block text-sm">{product.name}</span>
+              <span className="font-medium text-slate-800 line-clamp-1 max-w-[100px] sm:max-w-[140px] block text-sm">{product.name}</span>
               {product.brand && <span className="text-xs text-slate-400">{product.brand}</span>}
             </div>
           </div>
         </td>
-        <td className="px-5 py-4">
+        <td className="px-3 sm:px-5 py-3 sm:py-4">
           <div className="flex items-center gap-1.5">
             <span className={`text-sm font-semibold ${totalStock === 0 ? 'text-red-600' : hasLow ? 'text-amber-600' : 'text-slate-700'}`}>{totalStock}</span>
             {hasOut && <span className="text-xs text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full">Out</span>}
             {!hasOut && hasLow && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">Low</span>}
           </div>
         </td>
-        <td className="px-5 py-4">
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${product.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+        <td className="px-3 sm:px-5 py-3 sm:py-4">
+          <span className={`inline-flex items-center px-2 sm:px-2.5 py-1 rounded-full text-xs font-medium ${product.status === 'ACTIVE' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
             <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${product.status === 'ACTIVE' ? 'bg-green-500' : 'bg-slate-400'}`} />
             {product.status}
           </span>
         </td>
-        <td className="px-5 py-4">
+        <td className="px-3 sm:px-5 py-3 sm:py-4">
           <div className="flex items-center gap-1">
-            <button onClick={() => setExpanded((v) => !v)} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-xs font-medium">
-              <Layers size={12} /> Variants {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            <button onClick={() => setExpanded((v) => !v)} className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg text-indigo-600 bg-indigo-50 hover:bg-indigo-100 text-xs font-medium">
+              <Layers size={12} /> <span className="hidden sm:inline">Variants</span> {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </button>
             <button onClick={() => router.push(`/store/add-product?id=${product.id}`)} className="p-2 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200" title="Edit">
               <Pencil size={14} />
@@ -126,12 +126,12 @@ function ProductRow({ product, onDelete, onVariantUpdate }) {
 
       {expanded && (
         <tr className="bg-indigo-50/30">
-          <td colSpan={4} className="px-5 py-3">
+          <td colSpan={4} className="px-3 sm:px-5 py-3">
             {!variants.length ? (
               <p className="text-sm text-slate-400 py-2">No variants found.</p>
             ) : (
-              <div className="rounded-lg border border-indigo-100 bg-white overflow-hidden">
-                <table className="w-full text-sm">
+              <div className="rounded-lg border border-indigo-100 bg-white overflow-x-auto">
+                <table className="w-full text-sm min-w-[560px]">
                   <thead>
                     <tr className="bg-indigo-50 border-b border-indigo-100">
                       {['Color', 'Size', 'Price', 'Cost', 'SKU', 'Stock', 'Status'].map((h) => (
@@ -228,45 +228,43 @@ export default function ManageProductPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-800">Manage Products</h1>
-            <p className="text-slate-500 mt-1 text-sm">Click Variants to expand and edit inline</p>
-          </div>
-          <span className="text-sm text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-full">{products.length} products</span>
+    <div className="px-3 sm:px-6 py-4 sm:py-6">
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-800">Manage Products</h1>
+          <p className="text-slate-500 mt-1 text-sm">Click Variants to expand and edit inline</p>
         </div>
+        <span className="text-sm text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-full">{products.length} products</span>
+      </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center py-20 gap-2 text-slate-400"><Loader2 size={20} className="animate-spin" /> Loading...</div>
-          ) : products.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-              <PackageOpen size={48} className="mb-3 text-slate-300" />
-              <p className="text-lg font-medium">No products yet</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50">
-                    {['Product', 'Total Stock', 'Status', 'Actions'].map((h) => (
-                      <th key={h} className="text-left px-5 py-4 font-medium text-slate-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map((product) => (
-                    <ProductRow key={product.id} product={product}
-                      onDelete={(p) => setDeleteConfirm({ open: true, productId: p.id, productName: p.name })}
-                      onVariantUpdate={handleVariantUpdate} />
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-20 gap-2 text-slate-400"><Loader2 size={20} className="animate-spin" /> Loading...</div>
+        ) : products.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+            <PackageOpen size={48} className="mb-3 text-slate-300" />
+            <p className="text-lg font-medium">No products yet</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[480px]">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  {['Product', 'Total Stock', 'Status', 'Actions'].map((h) => (
+                    <th key={h} className="text-left px-3 sm:px-5 py-3 sm:py-4 font-medium text-slate-500">{h}</th>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => (
+                  <ProductRow key={product.id} product={product}
+                    onDelete={(p) => setDeleteConfirm({ open: true, productId: p.id, productName: p.name })}
+                    onVariantUpdate={handleVariantUpdate} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {deleteConfirm.open && (

@@ -55,7 +55,6 @@ export default function StoreCategoriesPage() {
     c.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Updated: use isGlobal boolean
   const canModify = (cat) => !cat.isGlobal;
 
   const handleImageUpload = (e) => {
@@ -150,17 +149,17 @@ export default function StoreCategoriesPage() {
   // ── Form ──────────────────────────────────────────────────────
   if (showForm) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-6">
+      <div className="px-3 sm:px-6 py-4 sm:py-6">
         <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-          <div className="flex items-center justify-between p-6 border-b border-slate-100">
+          <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <button onClick={closeForm} className="p-2 hover:bg-slate-100 rounded-full text-slate-600"><ChevronLeft size={20} /></button>
-              <h2 className="text-xl font-bold text-slate-800">{editingId ? 'Edit Category' : 'Add Store Category'}</h2>
+              <h2 className="text-lg sm:text-xl font-bold text-slate-800">{editingId ? 'Edit Category' : 'Add Store Category'}</h2>
             </div>
             <button onClick={closeForm} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500"><X size={20} /></button>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Image */}
             <div className="md:col-span-1">
               <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -196,9 +195,9 @@ export default function StoreCategoriesPage() {
               )}
             </div>
 
-            <div className="md:col-span-3 flex justify-end gap-3 pt-4 border-t border-slate-100">
-              <button type="button" onClick={closeForm} disabled={submitting} className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 text-sm">Cancel</button>
-              <button type="submit" disabled={submitting} className={`px-5 py-2.5 rounded-lg text-white flex items-center gap-1.5 text-sm font-medium disabled:opacity-70 ${editingId ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-green-600 hover:bg-green-700'}`}>
+            <div className="md:col-span-3 flex flex-col-reverse sm:flex-row sm:justify-end gap-3 pt-4 border-t border-slate-100">
+              <button type="button" onClick={closeForm} disabled={submitting} className="w-full sm:w-auto px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 text-sm">Cancel</button>
+              <button type="submit" disabled={submitting} className={`w-full sm:w-auto px-5 py-2.5 rounded-lg text-white flex items-center justify-center gap-1.5 text-sm font-medium disabled:opacity-70 ${editingId ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-green-600 hover:bg-green-700'}`}>
                 {submitting ? <><Loader2 size={16} className="animate-spin" /> Saving...</> : editingId ? <><Pencil size={16} /> Save Changes</> : <><PlusCircle size={16} /> Add Category</>}
               </button>
             </div>
@@ -210,15 +209,15 @@ export default function StoreCategoriesPage() {
 
   // ── List View ─────────────────────────────────────────────────
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6">
+    <div className="px-3 sm:px-6 py-4 sm:py-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h1 className="text-2xl text-slate-800 font-bold flex items-center gap-2"><div className="p-2 bg-green-50 rounded-lg text-green-600"><Layers size={24} /></div> Product Categories</h1>
+          <h1 className="text-xl sm:text-2xl text-slate-800 font-bold flex items-center gap-2"><div className="p-2 bg-green-50 rounded-lg text-green-600"><Layers size={22} /></div> Product Categories</h1>
           <p className="text-slate-500 text-sm mt-1">
             <span className="text-purple-600 font-medium">Global</span> = admin categories (read-only). <span className="text-blue-600 font-medium">Mine</span> = your store categories (editable).
           </p>
         </div>
-        <button onClick={openAddForm} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 text-sm font-medium">
+        <button onClick={openAddForm} className="w-full sm:w-auto justify-center bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 text-sm font-medium">
           <PlusCircle size={18} /> Add Category
         </button>
       </div>
@@ -230,7 +229,7 @@ export default function StoreCategoriesPage() {
               className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-100 bg-slate-50" />
             <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           </div>
-          <div className="border border-slate-200 rounded-lg flex overflow-hidden">
+          <div className="border border-slate-200 rounded-lg flex overflow-hidden self-start">
             <button onClick={() => setViewMode('grid')} className={`p-2.5 ${viewMode === 'grid' ? 'bg-green-50 text-green-600' : 'text-slate-500 hover:bg-slate-50'}`}><LayoutGrid size={18} /></button>
             <button onClick={() => setViewMode('list')} className={`p-2.5 ${viewMode === 'list' ? 'bg-green-50 text-green-600' : 'text-slate-500 hover:bg-slate-50'}`}><List size={18} /></button>
           </div>
@@ -241,7 +240,7 @@ export default function StoreCategoriesPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400"><Layers size={40} className="mb-3 text-slate-300" /><p>No categories found</p></div>
         ) : viewMode === 'grid' ? (
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="p-3 sm:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map((cat) => {
               const owned = canModify(cat);
               return (
@@ -269,11 +268,11 @@ export default function StoreCategoriesPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[640px]">
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
                   {['Image', 'Name', 'Description', 'Scope', 'Actions'].map((h) => (
-                    <th key={h} className="text-left px-5 py-3.5 font-medium text-slate-500">{h}</th>
+                    <th key={h} className="text-left px-3 sm:px-5 py-3.5 font-medium text-slate-500">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -282,11 +281,11 @@ export default function StoreCategoriesPage() {
                   const owned = canModify(cat);
                   return (
                     <tr key={cat.id} className="border-b border-slate-50 hover:bg-slate-50">
-                      <td className="px-5 py-4"><div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100"><Image src={cat.image} alt={cat.name} fill className="object-cover" /></div></td>
-                      <td className="px-5 py-4 font-medium text-slate-800">{cat.name}</td>
-                      <td className="px-5 py-4 text-slate-500 max-w-xs"><p className="line-clamp-2">{cat.description}</p></td>
-                      <td className="px-5 py-4"><ScopeBadge cat={cat} /></td>
-                      <td className="px-5 py-4">
+                      <td className="px-3 sm:px-5 py-4"><div className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-100"><Image src={cat.image} alt={cat.name} fill className="object-cover" /></div></td>
+                      <td className="px-3 sm:px-5 py-4 font-medium text-slate-800">{cat.name}</td>
+                      <td className="px-3 sm:px-5 py-4 text-slate-500 max-w-xs"><p className="line-clamp-2">{cat.description}</p></td>
+                      <td className="px-3 sm:px-5 py-4"><ScopeBadge cat={cat} /></td>
+                      <td className="px-3 sm:px-5 py-4">
                         {owned ? (
                           <div className="flex items-center gap-2">
                             <button onClick={() => openEditForm(cat)} className="p-2 rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600"><Pencil size={15} /></button>

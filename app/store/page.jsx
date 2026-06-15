@@ -132,7 +132,7 @@ export default function StoreDashboard() {
   const chartData = (dash.dailyData || []).slice(-14);
 
   return (
-    <div className="text-slate-600 pb-28 space-y-8">
+    <div className="px-3 sm:px-6 py-4 sm:py-6 text-slate-600 pb-28 space-y-8">
       {/* Header */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>

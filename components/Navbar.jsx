@@ -40,7 +40,12 @@ const Navbar = () => {
 
     const handleSearch = (e) => {
         e.preventDefault();
-        router.push(`/shop?search=${search}`);
+        const trimmed = search.trim();
+        if (trimmed) {
+            router.push(`/shop?search=${encodeURIComponent(trimmed)}`);
+        } else {
+            router.push('/shop');
+        }
         setShowSearch(false);
     };
 
@@ -102,11 +107,15 @@ const Navbar = () => {
                                 <input 
                                     className="w-full bg-transparent outline-none placeholder-slate-500 text-slate-800" 
                                     type="text" 
-                                    placeholder="Search products" 
+                                placeholder="Search products" 
                                     value={search} 
                                     onChange={(e) => setSearch(e.target.value)} 
-                                    required 
                                 />
+                                {search && (
+                                    <button type="button" onClick={() => { setSearch(''); router.push('/shop'); }} className="text-slate-400 hover:text-slate-600">
+                                        <XIcon size={16} />
+                                    </button>
+                                )}
                             </form>
 
                             {/* Desktop Wishlist */}
@@ -243,11 +252,14 @@ const Navbar = () => {
                                 value={search} 
                                 onChange={(e) => setSearch(e.target.value)} 
                                 autoFocus
-                                required 
                             />
                             <button 
                                 type="button"
-                                onClick={() => setShowSearch(false)}
+                                onClick={() => {
+                                    setSearch('');
+                                    setShowSearch(false);
+                                    if (search) router.push('/shop');
+                                }}
                                 className="text-slate-400"
                             >
                                 <XIcon size={18} />
